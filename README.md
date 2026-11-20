@@ -1,16 +1,20 @@
 # Stack Counter
 
+## ▶ [Open the app](https://troglodyte.github.io/brothers-counting-things/)
+
+**https://troglodyte.github.io/brothers-counting-things/** — open it on your
+phone in Chrome, then *Add to Home screen* to use it like an app (works offline).
+
+---
+
 Count a stack of brochures or magazines from a phone photo. Open it in the
 phone browser, point the camera at the side of the stack, press the shutter,
 drag from the first item to the last, and the count follows your finger.
 "Save & next" adds it to a running list (copy or share it when you're done)
 and goes straight back to the camera.
 
-**Use it:** <https://troglodyte.github.io/brothers-counting-things/>
-(add `?dev` to the URL for the developer tools). Every push to `main`
-redeploys it.
-
 Free, offline-capable (installs to the home screen as a PWA), MIT licensed.
+Add `?dev` to the URL for the developer tools. Every push to `main` redeploys it.
 
 ## How it counts
 
