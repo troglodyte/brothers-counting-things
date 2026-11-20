@@ -3,14 +3,34 @@
 // guide line in a live viewfinder would be. Pass 1 finds the stack on that line by stripe
 // energy (see findStack); pass 2 runs the ordinary countStack between the found ends.
 // Tuning flags: --half --bridge --trim --win. Not part of CI.
-// Result 2026-11-20 (defaults): 11/18 within tolerance, one wrong "good" (6813 at +50%,
-// where the line reaches the stack behind). Misses come from textured surroundings past
-// the stack (6811, 6812 bottom), not from the count itself.
+// Result 2026-11-20 (defaults): energy alone 11/18 within tolerance with one wrong "good"
+// (6813 at +50% reached the stack behind). With the look bound (--look 0.2) 14/18 and no
+// wrong "good", the same for --look 0.15..0.3. Misses: 6811 counts 25 of ~23 with the ends
+// right; 6815 at +15% is the staggered-stack weakness (low).
 import { decodeImage, loadManifest } from './manifest';
 import { countStack, countTolerance, type Confidence } from '../src/algorithm/count';
 import { windowedPeriod } from '../src/algorithm/period';
 import { estimateStripeAngle, extractStrip, sampleProfile, stripGeometry, type Line } from '../src/algorithm/profile';
 import { boxSmooth, median } from '../src/algorithm/signal';
+import { lookSimilarity, stackLook } from '../src/algorithm/appearance';
+import type { ImageLike } from '../src/algorithm/profile';
+
+/** Colour version of extractStrip (nearest neighbour; enough for a histogram). */
+function colourStrip(img: ImageLike, line: Line, geom: ReturnType<typeof stripGeometry>): ImageLike {
+  const W = Math.ceil(geom.length) + 2 * geom.margin + 1, H = 2 * geom.halfHeight + 1;
+  const L = geom.length || 1, dx = (line.x2 - line.x1) / L, dy = (line.y2 - line.y1) / L;
+  const ch = img.channels ?? 4;
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let v = 0; v < H; v++) for (let u = 0; u < W; u++) {
+    const a = u - geom.margin, b = v - geom.halfHeight;
+    const x = Math.round(line.x1 + a * dx - b * dy - 0.5), y = Math.round(line.y1 + a * dy + b * dx - 0.5);
+    const o = (v * W + u) * 4;
+    if (x < 0 || y < 0 || x >= img.width || y >= img.height) continue; // black = outside, skipped by stackLook
+    const i = (y * img.width + x) * ch;
+    out[o] = img.data[i]; out[o + 1] = img.data[i + 1]; out[o + 2] = img.data[i + 2]; out[o + 3] = 255;
+  }
+  return { width: W, height: H, data: out, channels: 4 };
+}
 
 const dir = process.argv[2] && !process.argv[2].startsWith('-') ? process.argv[2] : 'fixtures';
 const verbose = process.argv.includes('-v');
@@ -32,6 +52,7 @@ interface Found { count: number; start: number; end: number; notes: string; conf
  * stack's outer edges, and the count is the integral of 1/period between them.
  */
 const arg = (k: string, d: number) => { const i = process.argv.indexOf('--' + k); return i > 0 ? Number(process.argv[i + 1]) : d; };
+const LOOK = arg('look', 0.2), LOOKRUN = arg('lookrun', 2);
 const WIN = arg('win', 1), HALF = arg('half', 0.5), BRIDGE = arg('bridge', 3), TRIM = arg('trim', 1);
 function findStack(img: Parameters<typeof extractStrip>[0], line: Line): Found | null {
   const geom = stripGeometry(line, 32);
@@ -50,9 +71,8 @@ function findStack(img: Parameters<typeof extractStrip>[0], line: Line): Found |
   const mid = Math.round(ext + geom.length / 2);
   const ref = median(Array.from(en.subarray(Math.round(ext + geom.length / 3), Math.round(ext + (2 * geom.length) / 3))));
   const thr = HALF * ref;
-  const walk = (dir: 1 | -1): number => {
+  const walk = (dir: 1 | -1, lo = ext, hi = ext + geom.length): number => {
     let i = mid, lastIn = mid;
-    const lo = ext, hi = ext + geom.length;
     while (i + dir >= lo && i + dir <= hi) {
       i += dir;
       if (en[i] >= thr) lastIn = i;
@@ -63,7 +83,35 @@ function findStack(img: Parameters<typeof extractStrip>[0], line: Line): Found |
     if (j < 0 || j >= n || en[j] >= thr) return lastIn;
     return lastIn + (dir * (en[lastIn] - thr)) / (en[lastIn] - en[j]);
   };
-  const A0 = walk(-1), B0 = walk(1);
+  let A0 = walk(-1), B0 = walk(1);
+  // Look cap: walk out one item-sized slice at a time while the slice's colour histogram
+  // resembles the middle third's; LOOKRUN dissimilar slices in a row end the stack.
+  const cs = colourStrip(img, line, geom);
+  const lookOf = (from: number, to: number) => stackLook(cs, { margin: from, length: to - from, halfHeight: geom.halfHeight });
+  const refLook = lookOf(ext + geom.length / 3, ext + (2 * geom.length) / 3);
+  const sims: string[] = [];
+  const lookWalk = (dir: 1 | -1): number => {
+    let x = mid, edge = mid, bad = 0;
+    while (true) {
+      const p = per.periodAt(x), nx = x + dir * p;
+      if (nx < ext || nx > ext + geom.length) return dir > 0 ? ext + geom.length : ext;
+      const l = lookOf(Math.min(x, nx), Math.max(x, nx));
+      const sim = l && refLook ? lookSimilarity(l, refLook) : 0;
+      sims.push(sim.toFixed(2));
+      if (sim >= LOOK) { edge = nx; bad = 0; } else if (++bad >= LOOKRUN) return edge;
+      x = nx;
+    }
+  };
+  let lookNote = '';
+  if (LOOK > 0 && refLook) {
+    const la = lookWalk(-1); sims.push('|'); const lb = lookWalk(1);
+    // The look only bounds the energy walk (one period past the last stack-like slice);
+    // the energy crossing still places the edge.
+    const capA = la - per.periodAt(la) > A0, capB = lb + per.periodAt(lb) < B0;
+    if (capA) A0 = walk(-1, Math.round(la - per.periodAt(la)), ext + geom.length);
+    if (capB) B0 = walk(1, ext, Math.round(lb + per.periodAt(lb)));
+    lookNote = ` look-capped ${capA ? 'top ' : ''}${capB ? 'bottom' : ''} [${sims.join(' ')}]`;
+  }
   // The stack/background step adds energy of its own; trim TRIM periods off each end.
   const A = A0 + TRIM * per.periodAt(A0), B = B0 - TRIM * per.periodAt(B0);
   let items = 0;
@@ -77,7 +125,7 @@ function findStack(img: Parameters<typeof extractStrip>[0], line: Line): Found |
   const r = countStack(img, sub);
   if (r.count === null) return null;
   const count = r.count;
-  return { count, start, end, confidence: r.confidence, notes: `edge-to-edge ${items.toFixed(2)}, pass 2 period ${r.periodCount} edges ${r.peakCount} ${r.confidence}` };
+  return { count, start, end, confidence: r.confidence, notes: `${lookNote} edge-to-edge ${items.toFixed(2)}, pass 2 period ${r.periodCount} edges ${r.peakCount} ${r.confidence}` };
 }
 
 let ok = 0, total = 0;
