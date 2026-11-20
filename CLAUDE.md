@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Stack Counter** is a phone-browser PWA that counts a stack of brochures or magazines from a side-on photo. The user taps the first item, then the last item, and the app reports the count. The target accuracy is max(5, 2%) of the true count. The repo is `troglodyte/brothers-counting-things` (private).
 
 - `stack-counter-plan.md` is the design plan, with phases 0 to 4 and a gate for each. Read it before you change the algorithm or add features.
-- `fixtures/` (git-ignored except its README) holds the six real stack photos, `6811.jpg` to `6816.jpg`, and a `manifest.json` with one line per photo. Every `trueCount` is still `null` until the user supplies hand counts. Each line end may be off by about one item. In 6813 only the front (brown) stack is annotated. 6815 and 6816 mix several titles of different thickness in one stack. The originals are also in `images/`, which is git-ignored. Never commit photos.
-- These real photos are 7 to 30 thick items shot at an angle, at 31 to 237 px per item. That is far from the plan's assumed hundreds of thin items shot square-on.
+- `fixtures/` (git-ignored except its README) holds the six real stack photos, `6811.jpg` to `6816.jpg`, and a `manifest.json` with one line per photo. The true counts are the user's: 6811 ≈ 23, 6812 = 20, 6813 = 7, 6814 ≈ 22, 6815 ≈ 60, and 6816 ≈ 60 (6816 is the same stack as 6815). Each line end may be off by about one item. In 6813 only the front (brown) stack is annotated. 6815 and 6816 mix several titles of different thickness in one stack. The originals are also in `images/`, which is git-ignored. Never commit photos.
+- **These photos are the real use case** (confirmed by the user on 2026-11-20). The stacks hold 7 to 60 thick books, magazines or brochures, shot at an angle, at 31 to 237 px per item, and some mix titles. The plan assumed hundreds of thin, single-title items shot square-on, so its thin-item concerns matter less than oblique views, perspective and mixed thicknesses. On these stacks the tolerance max(5, 2%) always works out to ±5, which is very loose. 6811 passes at +4 out of 23.
+- Results on 2026-11-20: 6/6 within tolerance, errors of +4, 0, 0, +2, −3 and −1. Thick items over-count (6811, 6814), and 6814 does so at *good* confidence.
 
 ## Commands
 
