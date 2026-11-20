@@ -27,6 +27,7 @@ npm run harness -- fixtures-synthetic  # accuracy gate on the synthetic set
 npm run intake  -- fixtures            # Phase 0: image sizes and px-per-item table
 npm run harness -- fixtures            # accuracy gate on the real photos
 # harness flags: --min-share 0.9, --if-present, --json out.json
+npx tsx harness/robust.ts              # robustness: lines shifted ±75/±150 px, bands 4/6/10 (want 90/90, 0 wrong good)
 ```
 
 Add `?dev` to the app URL to show Settings → Developer → "Copy annotation JSON". It produces `manifest.json` entries for the harness. The manifest format is in `fixtures/README.md`: each entry has `image`, `line {x1,y1,x2,y2}` in full-resolution pixels after EXIF rotation, `trueCount` (or `null`), and optional `settings`.
