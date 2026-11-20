@@ -7,7 +7,7 @@
 // between the found end items, so the period is measured on the stack alone;
 // over the whole guide line the background skews it.
 //
-// harness/autoends.ts measures this on the real photos: 14/18 within
+// harness/autoends.ts measures this on the real photos: 17/18 within
 // tolerance with the guide 15-50% longer than the stack, no wrong "good".
 
 import { lookSimilarity, stackLook } from './appearance';
@@ -22,6 +22,8 @@ export interface AutoEndsOptions {
   half?: number;
   /** Energy dips shorter than this many periods are bridged. */
   bridge?: number;
+  /** Energy past a bridged dip must last this many periods to count as stack (a lone background step gives about one). */
+  minRun?: number;
   /** Periods trimmed off each energy edge (the stack/background step adds energy of its own). */
   trim?: number;
   /** Colour similarity an item-sized slice needs to the middle third to count as stack. 0 turns the look check off. */
@@ -30,7 +32,7 @@ export interface AutoEndsOptions {
   lookRun?: number;
 }
 
-export const AUTO_DEFAULTS: Required<AutoEndsOptions> = { win: 1, half: 0.5, bridge: 3, trim: 1, look: 0.2, lookRun: 2 };
+export const AUTO_DEFAULTS: Required<AutoEndsOptions> = { win: 1, half: 0.5, bridge: 3, minRun: 1.5, trim: 1, look: 0.2, lookRun: 2 };
 
 export interface FoundEnds {
   /** Centres of the first and last item, in px along the guide line from its start. */
@@ -66,13 +68,24 @@ export function findEnds(strip: ImageLike, geom: StripGeometry, opts: AutoEndsOp
 
   // Walk out from the middle while the energy stays above the threshold, bridging short
   // dips. A blurred step crosses half its height at the step, so the crossing is the edge.
+  // Past a dip, the energy only counts once it lasts `minRun` periods: more stack goes on
+  // for several items, while a lone step in the background (a shadow edge on the shelf)
+  // has about one period of energy. Gaps under half a period are ripple, not dips.
   const walk = (dir: 1 | -1, from: number, to: number): number => {
     let i = mid;
-    let lastIn = mid;
+    let lastIn = mid; // last index of the accepted stack
+    let lastAbove = mid; // last index above the threshold, accepted or not
+    let pendingFrom = NaN; // start of energy past a dip that has not yet lasted minRun periods
     while (i + dir >= from && i + dir <= to) {
       i += dir;
-      if (en[i] >= thr) lastIn = i;
-      else if (Math.abs(i - lastIn) > o.bridge * P(i)) break;
+      if (en[i] >= thr) {
+        if (Math.abs(i - lastAbove) > 0.5 * P(i) && Number.isNaN(pendingFrom)) pendingFrom = i;
+        lastAbove = i;
+        if (Number.isNaN(pendingFrom) || Math.abs(i - pendingFrom) >= o.minRun * P(i)) {
+          lastIn = i;
+          pendingFrom = NaN;
+        }
+      } else if (Math.abs(i - lastAbove) > o.bridge * P(i)) break;
     }
     const j = lastIn + dir;
     if (j < 0 || j >= n || en[j] >= thr) return lastIn;

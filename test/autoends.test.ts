@@ -62,6 +62,26 @@ describe('findEnds', () => {
     }
   }
 
+  // 6811: under the stack the shelf is in shadow, then sunlit. The single
+  // shadow/light step has about one period of stripe energy, and the dip
+  // before it is shorter than the bridge, so the walk used to cross the dip
+  // and end the stack on the step, a whole item and more past the last one.
+  it('does not take a lone background step past a short dip for more stack', () => {
+    const c = { count: 12, pxPerItem: 40 };
+    const synth = synthStack({ ...c, noise: 4, seed: 5, marginPx: 300 });
+    const bottom = Math.ceil(synth.height / 2 + (c.count * c.pxPerItem) / 2);
+    for (let y = bottom + 2.5 * c.pxPerItem; y < synth.height; y++) synth.data.fill(150, y * synth.width, (y + 1) * synth.width);
+    const img = tinted(synth);
+    const guide = extend(synth.line, 0.5);
+    const geom = stripGeometry(guide, 32);
+    const ends = findEnds(extractColourStrip(img, guide, geom), geom);
+    expect(ends).not.toBeNull();
+    // The guide starts half the line's length (11 items) below the bottom item's centre.
+    expect(Math.abs(ends!.start - 0.5 * (c.count - 1) * c.pxPerItem)).toBeLessThan(0.5 * c.pxPerItem);
+    const r = countStack(img, subLine(guide, ends!));
+    expect(Math.abs(r.count! - c.count)).toBeLessThanOrEqual(countTolerance(c.count));
+  });
+
   it('finds nothing on a blank wall', () => {
     const n = 200 * 400;
     const img = { width: 200, height: 400, data: new Uint8ClampedArray(n * 3).fill(128), channels: 3 };

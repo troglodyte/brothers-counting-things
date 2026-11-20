@@ -2,11 +2,13 @@
 // Each annotated line is lengthened past both ends by 15/30/50% of its length, as the
 // live viewfinder's fixed guide line would be. src/algorithm/autoends.findEnds finds the
 // stack on it; countStack then counts between the found ends (as the app does).
-// Tuning flags (see AutoEndsOptions): --win --half --bridge --trim --look --lookrun. Not part of CI.
+// Tuning flags (see AutoEndsOptions): --win --half --bridge --minrun --trim --look --lookrun. Not part of CI.
 //
 // Result 2026-11-20: energy alone (--look 0) 11/18 within tolerance with one wrong "good"
 // (6813 at +50% reached the stack behind). With the look bound, 14/18 and no wrong "good",
-// the same for --look 0.15..0.3. Misses: 6811 counts 25 of ~23 with the ends right; 6815
+// the same for --look 0.15..0.3. Then 17/18 with --minrun 1..1.5 (2 loses 6813 at +15%):
+// on 6811 the walk had bridged the shelf's shadow onto its sunlit edge, one item and more
+// past the last book (the manifest line also ended in the shadow, since fixed). Miss: 6815
 // at +15% is the staggered-stack weakness (low).
 import { decodeImage, loadManifest } from './manifest';
 import { AUTO_DEFAULTS, findEnds, subLine } from '../src/algorithm/autoends';
@@ -24,6 +26,7 @@ const opts = {
   win: arg('win', AUTO_DEFAULTS.win),
   half: arg('half', AUTO_DEFAULTS.half),
   bridge: arg('bridge', AUTO_DEFAULTS.bridge),
+  minRun: arg('minrun', AUTO_DEFAULTS.minRun),
   trim: arg('trim', AUTO_DEFAULTS.trim),
   look: arg('look', AUTO_DEFAULTS.look),
   lookRun: arg('lookrun', AUTO_DEFAULTS.lookRun),
