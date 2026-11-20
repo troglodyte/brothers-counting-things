@@ -28,17 +28,29 @@ export interface Settled<F extends LiveFrame> {
   latest: F;
 }
 
-/** How far back frames vote. */
-export const WINDOW_MS = 2000;
-/** Frames needed, and the share of the vote the count needs, to call it steady. */
-export const STEADY_FRAMES = 5;
-export const STEADY_SHARE = 0.6;
-/** A new count replaces the shown one once its vote is this many times bigger. */
-const SWITCH_RATIO = 1.5;
-/** A line whose ends move more than this share of its length is another stack... */
-const MOVED = 0.25;
-/** ...once this many frames in a row say so (one bad frame does not reset). */
-const MOVED_FRAMES = 3;
+export interface SettleOptions {
+  /** How far back frames vote, ms. */
+  windowMs: number;
+  /** Frames needed, and the share of the vote the count needs, to call it steady. */
+  steadyFrames: number;
+  steadyShare: number;
+  /** A new count replaces the shown one once its vote is this many times bigger. */
+  switchRatio: number;
+  /** A line whose ends move more than this share of its length is another stack... */
+  moved: number;
+  /** ...once this many frames in a row say so (one bad frame does not reset). */
+  movedFrames: number;
+}
+
+export const SETTLE_DEFAULTS: SettleOptions = {
+  windowMs: 2000,
+  steadyFrames: 5,
+  steadyShare: 0.6,
+  switchRatio: 1.5,
+  moved: 0.25,
+  movedFrames: 3,
+};
+export const WINDOW_MS = SETTLE_DEFAULTS.windowMs;
 
 const WEIGHT: Record<Confidence, number> = { good: 1, check: 0.5, low: 0.25 };
 
@@ -52,6 +64,11 @@ export class Settler<F extends LiveFrame> {
   /** Consecutive frames far from the settled line: the next stack, if they keep coming. */
   private moved: Entry<F>[] = [];
   private shown: number | null = null;
+  private o: SettleOptions;
+
+  constructor(opts: Partial<SettleOptions> = {}) {
+    this.o = { ...SETTLE_DEFAULTS, ...opts };
+  }
 
   reset(): void {
     this.history = [];
@@ -62,9 +79,9 @@ export class Settler<F extends LiveFrame> {
   /** Add one frame's result (`null`: nothing found) taken at time `t` ms. */
   push(frame: F | null, t: number): void {
     const now = this.settled();
-    if (frame && now && moved(now.line, frame.line)) {
+    if (frame && now && moved(now.line, frame.line, this.o.moved)) {
       this.moved.push({ t, frame });
-      if (this.moved.length >= MOVED_FRAMES) {
+      if (this.moved.length >= this.o.movedFrames) {
         this.history = this.moved;
         this.moved = [];
         this.shown = null;
@@ -73,7 +90,7 @@ export class Settler<F extends LiveFrame> {
       this.moved = [];
       this.history.push({ t, frame });
     }
-    this.history = this.history.filter((e) => e.t > t - WINDOW_MS);
+    this.history = this.history.filter((e) => e.t > t - this.o.windowMs);
   }
 
   settled(): Settled<F> | null {
@@ -95,7 +112,7 @@ export class Settler<F extends LiveFrame> {
     let bestVote = -1;
     for (const [c, v] of votes) if (v > bestVote) [best, bestVote] = [c, v];
     const shownVote = this.shown === null ? 0 : votes.get(this.shown) ?? 0;
-    if (shownVote === 0 || bestVote > shownVote * SWITCH_RATIO) this.shown = best;
+    if (shownVote === 0 || bestVote > shownVote * this.o.switchRatio) this.shown = best;
     const count = this.shown!;
     const voters = this.history.flatMap((e) => (e.frame && e.frame.count === count ? [e.frame] : []));
     const latest = voters[voters.length - 1];
@@ -103,17 +120,19 @@ export class Settler<F extends LiveFrame> {
       count,
       confidence: latest.confidence,
       line: medianLine(voters.map((f) => f.line)),
-      steady: frames >= STEADY_FRAMES && (votes.get(count) ?? 0) >= STEADY_SHARE * total,
+      // Not while the newest frames put the line elsewhere: that may be the next
+      // stack, and the shutter would open its photo on this stack's line.
+      steady: this.moved.length === 0 && frames >= this.o.steadyFrames && (votes.get(count) ?? 0) >= this.o.steadyShare * total,
       latest,
     };
   }
 }
 
-function moved(a: Line, b: Line): boolean {
+function moved(a: Line, b: Line, share: number): boolean {
   const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) || 1;
   const d1 = Math.hypot(b.x1 - a.x1, b.y1 - a.y1);
   const d2 = Math.hypot(b.x2 - a.x2, b.y2 - a.y2);
-  return Math.max(d1, d2) > MOVED * len;
+  return Math.max(d1, d2) > share * len;
 }
 
 function median(xs: number[]): number {

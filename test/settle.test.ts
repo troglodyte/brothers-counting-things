@@ -63,6 +63,16 @@ describe('Settler', () => {
     expect(r.line).toEqual(other);
   });
 
+  it('is not steady while the newest frames are on another stack (the shutter must not use the old line)', () => {
+    const s = new Settler<LiveFrame>();
+    const other = line(300, 600, 200);
+    const t = feed(s, [f(60), f(60), f(60), f(60), f(60), f(7, 'good', other)]);
+    expect(s.settled()!.count).toBe(60);
+    expect(s.settled()!.steady).toBe(false);
+    feed(s, [f(60)], t); // the stray frame was just a stray: steady again
+    expect(s.settled()!.steady).toBe(true);
+  });
+
   it('reports the median line of the frames voting for the count', () => {
     const s = new Settler<LiveFrame>();
     feed(s, [f(23, 'good', line(100, 900)), f(23, 'good', line(104, 896)), f(23, 'good', line(140, 900)), f(25, 'good', line(0, 999))]);
