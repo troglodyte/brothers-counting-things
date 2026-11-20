@@ -4,8 +4,10 @@
 import { boxSmooth, parabolicOffset } from './signal';
 
 export interface PeakResult {
-  /** Peaks inside the counted range. */
+  /** Items inside the counted range: visible peaks plus `inferred`. */
   count: number;
+  /** Items implied by tick gaps of about two or more local periods (missed edges). */
+  inferred: number;
   /** Sub-sample positions (profile indices) of the counted peaks, ascending. */
   ticks: number[];
 }
@@ -82,5 +84,14 @@ export function countPeaks(
   const lo = from - 0.5 * periodAt(from);
   const hi = to + 0.5 * periodAt(to);
   const ticks = kept.filter((p) => p >= lo && p < hi);
-  return { count: ticks.length, ticks };
+
+  // A missing or stuck-together edge merges two items into one bright band,
+  // leaving a gap of about two periods between ticks. Count the items such a
+  // gap must hold, so the cross-check compares item counts, not visible edges.
+  let inferred = 0;
+  for (let i = 1; i < ticks.length; i++) {
+    const gap = ticks[i] - ticks[i - 1];
+    inferred += Math.max(0, Math.round(gap / periodAt((ticks[i] + ticks[i - 1]) / 2)) - 1);
+  }
+  return { count: ticks.length + inferred, ticks, inferred };
 }
