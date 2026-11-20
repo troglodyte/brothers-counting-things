@@ -51,7 +51,7 @@ If straightening changes in one path, it has to change in the other too, or the 
 1. `profile.ts` gets the stripe angle from the gradient structure tensor. It then averages along the measured stripe direction over a band (6 px half-width by default) to produce a 1-D profile.
 2. `period.ts` (windowed period, the answer) gets a coarse period by autocorrelation over the whole line, its halves and its thirds, taking the smallest period whose strength is at least 0.6 of the best (`coarsePeriod`). It then uses overlapping windows of at most 25 periods and at most a third of the line, so short stacks still follow perspective. In each window it detrends, autocorrelates and refines to sub-pixel with a parabola. Weak windows take their period from neighbouring windows. The count is the integral of 1/period, **plus 1**, because the line runs from the middle of the first item to the middle of the last item.
 3. `peaks.ts` (cross-check) counts the narrow lines between items. `count.ts` picks their polarity by profile skewness (dark gaps on all real photos), so the old "invert" setting is gone from the UI. It counts by phase, phase(end) − phase(start) + 1, so ticks on gaps and ticks on centres give the same count. It also supplies the tick marks drawn on the photo.
-4. `count.ts` decides the answer:
+4. `count.ts` decides the answer (`chooseCount`, testable with plain numbers):
    - If the two counts agree within `countTolerance`, it reports the period count.
    - If they disagree, items thicker than 8 px use the peak count and thinner items keep the period count. Confidence drops to *check* or *low*.
    - Under 2.5 px per item, or when the peak count is about 2× the period count (the period locked onto double), it reports "too far away".
@@ -67,7 +67,7 @@ If straightening changes in one path, it has to change in the other too, or the 
 
 **Tests.** `test/synth.ts` builds synthetic profiles and synthetic stack photos with known counts, perspective, noise, missing edges and stagger; `harness/make-synthetic.ts` uses the same generators to build the CI fixture set.
 
-- `algorithm.test.ts`: signal helpers, period, peaks, `countStack` on synthetic photos, thick items, staggered stacks, half-period (spine stripe) lock.
+- `algorithm.test.ts`: signal helpers, period, peaks, `countStack` on synthetic photos, thick items, staggered stacks, half-period (spine stripe) lock, `chooseCount` rules.
 - `paths.test.ts`: browser vs harness straightening, placement resize rules.
 - `names.test.ts`: stack look, `pickTitle`, `closestName`.
 - `autoends.test.ts`: colour strip vs gray strip, `findEnds` on synthetic stacks with background past the ends.

@@ -55,6 +55,46 @@ export function countTolerance(n: number): number {
   return Math.max(1, Math.round(0.05 * n));
 }
 
+export interface CountChoice {
+  count: number;
+  method: 'period' | 'peaks';
+  confidence: Confidence;
+  warning?: string;
+}
+
+/**
+ * The answer from the two stages: the spacing count `periodCount`, the edge
+ * count `peakCount`, the mean item size and the period stage's 0..1 score.
+ */
+export function chooseCount(periodCount: number, peakCount: number, pxPerItem: number, score: number): CountChoice {
+  const tol = countTolerance(periodCount);
+  const diff = Math.abs(periodCount - peakCount);
+
+  // Below ~2 px per item the period stage locks onto twice the period; the
+  // edge count then comes out near double, which is the tell.
+  const ratio = peakCount / periodCount;
+  const lockedOnDouble = pxPerItem < 6 && ratio > 1.7 && ratio < 2.3;
+  if (pxPerItem < 2.5 || lockedOnDouble) {
+    return {
+      count: periodCount,
+      method: 'period',
+      confidence: 'low',
+      warning: 'Too far away: items are under 2.5 pixels each. Move closer or photograph in sections.',
+    };
+  }
+  if (diff <= tol) {
+    return { count: periodCount, method: 'period', confidence: score >= 0.6 ? 'good' : score >= 0.35 ? 'check' : 'low' };
+  }
+  // An edge count under 2 is no answer (nothing found), however thick the items.
+  const useEdges = pxPerItem > 8 && peakCount >= 2;
+  return {
+    count: useEdges ? peakCount : periodCount,
+    method: useEdges ? 'peaks' : 'period',
+    confidence: diff <= 2 * tol && score >= 0.35 ? 'check' : 'low',
+    warning: `The two methods disagree (${periodCount} by spacing, ${peakCount} by edges).`,
+  };
+}
+
 export const DEFAULTS = {
   bandHalfWidth: 6,
   periodsPerWindow: 25,
@@ -138,30 +178,10 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
   const peakCount = peaks.count;
   const pxPerItem = per.meanPeriod;
 
-  const tol = countTolerance(periodCount);
-  const diff = Math.abs(periodCount - peakCount);
-  let count = periodCount;
-  let method: CountResult['method'] = 'period';
-  let confidence: Confidence;
-
-  // Below ~2 px per item the period stage locks onto twice the period; the
-  // edge count then comes out near double, which is the tell.
-  const ratio = peakCount / periodCount;
-  const lockedOnDouble = pxPerItem < 6 && ratio > 1.7 && ratio < 2.3;
-  if (pxPerItem < 2.5 || lockedOnDouble) {
-    warnings.push('Too far away: items are under 2.5 pixels each. Move closer or photograph in sections.');
-    confidence = 'low';
-  } else if (diff <= tol) {
-    confidence = per.score >= 0.6 ? 'good' : per.score >= 0.35 ? 'check' : 'low';
-  } else {
-    // An edge count under 2 is no answer (nothing found), however thick the items.
-    if (pxPerItem > 8 && peakCount >= 2) {
-      count = peakCount;
-      method = 'peaks';
-    }
-    warnings.push(`The two methods disagree (${periodCount} by spacing, ${peakCount} by edges).`);
-    confidence = diff <= 2 * tol && per.score >= 0.35 ? 'check' : 'low';
-  }
+  const choice = chooseCount(periodCount, peakCount, pxPerItem, per.score);
+  const { count, method } = choice;
+  let { confidence } = choice;
+  if (choice.warning) warnings.push(choice.warning);
   if (halfSuspect && confidence === 'good') confidence = 'check';
   if (per.strongShare < 0.5) warnings.push('Parts of the stack have no clear stripe pattern (blur, glare or shadow?).');
   if (per.spread > 0.05) warnings.push('Item spacing is uneven along the stack.');

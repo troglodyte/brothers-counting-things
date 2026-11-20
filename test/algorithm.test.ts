@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countStack, countTolerance } from '../src/algorithm/count';
+import { chooseCount, countStack, countTolerance } from '../src/algorithm/count';
 import { countPeaks } from '../src/algorithm/peaks';
 import { estimateGlobalPeriod, windowedPeriod } from '../src/algorithm/period';
 import { detrend, parabolicOffset } from '../src/algorithm/signal';
@@ -302,5 +302,39 @@ describe('a second line through the middle of every item (spine stripe)', () => 
         expect([count, px, r.count, r.warnings.some((w) => w.startsWith('Every other line'))]).toEqual([count, px, count, false]);
       }
     }
+  });
+});
+
+describe('chooseCount', () => {
+  it('reports the spacing count when the two agree, confidence from the score', () => {
+    expect(chooseCount(23, 24, 120, 0.7)).toEqual({ count: 23, method: 'period', confidence: 'good' });
+    expect(chooseCount(23, 23, 120, 0.4).confidence).toBe('check');
+    expect(chooseCount(23, 23, 120, 0.2).confidence).toBe('low');
+  });
+
+  it('takes the edge count on thick items when the two disagree', () => {
+    const c = chooseCount(20, 23, 120, 0.5);
+    expect(c).toMatchObject({ count: 23, method: 'peaks', confidence: 'low' });
+    expect(c.warning).toMatch(/disagree/);
+    // Within twice the tolerance: check, not low.
+    expect(chooseCount(20, 22, 120, 0.5).confidence).toBe('check');
+  });
+
+  it('keeps the spacing count on thin items when the two disagree', () => {
+    expect(chooseCount(100, 110, 6, 0.5)).toMatchObject({ count: 100, method: 'period' });
+  });
+
+  it('never answers with an edge count under 2, however thick the items', () => {
+    for (const edges of [0, 1]) {
+      expect(chooseCount(12, edges, 120, 0.5)).toMatchObject({ count: 12, method: 'period', confidence: 'low' });
+    }
+    expect(chooseCount(12, 2, 120, 0.5)).toMatchObject({ count: 2, method: 'peaks' });
+  });
+
+  it('says too far away under 2.5 px per item, or when edges come out about double on small items', () => {
+    expect(chooseCount(100, 100, 2, 0.9)).toMatchObject({ confidence: 'low', warning: expect.stringMatching(/Too far/) });
+    expect(chooseCount(100, 200, 5, 0.9)).toMatchObject({ count: 100, confidence: 'low', warning: expect.stringMatching(/Too far/) });
+    // The same ratio on big items is an ordinary disagreement.
+    expect(chooseCount(100, 200, 7, 0.9).warning).toMatch(/disagree/);
   });
 });
