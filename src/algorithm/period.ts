@@ -40,6 +40,7 @@ export interface PeriodResult {
 }
 
 export interface PeriodOptions {
+  /** Longest window, in periods. Short lines use shorter windows (a third of the line, at least 4 periods). */
   periodsPerWindow?: number;
   strongThreshold?: number;
 }
@@ -100,17 +101,63 @@ export function windowedPeriod(
   coreLength: number,
   opts: PeriodOptions = {},
 ): PeriodResult | null {
+  const coreEnd = Math.min(profile.length, coreStart + Math.floor(coreLength) + 1);
+  const g = coarsePeriod(profile, coreStart, coreEnd);
+  if (!g || !(g.period >= 1.5)) return null;
+  return measureWindows(profile, coreStart, coreLength, g, opts);
+}
+
+/**
+ * Coarse period of profile[start, end): estimated on the whole segment, on
+ * its halves and on its thirds, then the smallest of those whose
+ * autocorrelation is close to the strongest. That is the rule
+ * estimateGlobalPeriod applies to lags, applied to pieces of the line.
+ *
+ * Perspective changes the item spacing along a stack (by 35 percent on one
+ * book photo). On thick items the stripes are narrow gap lines, and over the
+ * whole line their autocorrelation then has no clear peak at any one
+ * spacing: it can peak at two or four items, or at a chance coincidence.
+ * A third of the line sees a nearly constant spacing and a clear peak. The
+ * smallest such period is the one from the end where items look thinnest;
+ * the windows then search up to 1.5 times it.
+ */
+export function coarsePeriod(profile: Float32Array, start: number, end: number): GlobalPeriod | null {
+  const n = end - start;
+  const found: GlobalPeriod[] = [];
+  for (const parts of [1, 2, 3]) {
+    for (let i = 0; i < parts; i++) {
+      const g = estimateGlobalPeriod(profile, start + Math.round((i * n) / parts), start + Math.round(((i + 1) * n) / parts));
+      if (g && g.period >= 1.5) found.push(g);
+    }
+  }
+  if (found.length === 0) return null;
+  const best = Math.max(...found.map((g) => g.strength));
+  let pick: GlobalPeriod | null = null;
+  for (const g of found) if (g.strength >= 0.6 * best && (!pick || g.period < pick.period)) pick = g;
+  return pick;
+}
+
+function measureWindows(
+  profile: Float32Array,
+  coreStart: number,
+  coreLength: number,
+  g: GlobalPeriod,
+  opts: PeriodOptions,
+): PeriodResult {
   const periodsPerWindow = opts.periodsPerWindow ?? 25;
   const strongThreshold = opts.strongThreshold ?? 0.35;
   const coreEnd = Math.min(profile.length, coreStart + Math.floor(coreLength) + 1);
   const n = coreEnd - coreStart;
-
-  const g = estimateGlobalPeriod(profile, coreStart, coreEnd);
-  if (!g || !(g.period >= 1.5)) return null;
   const P0 = g.period;
   const detrended = detrend(profile, P0);
 
-  let W = Math.max(Math.round(periodsPerWindow * P0), Math.round(4 * P0));
+  // Windows are at most `periodsPerWindow` periods long, but also at most a
+  // third of the line, so a short stack still gets about five overlapping
+  // windows. Perspective changes the item spacing along the stack (153 to
+  // 109 px down one 23-book photo), and a single window's autocorrelation
+  // then reports the most common spacing, not the mean, so the count is off
+  // by several items. Never shorter than 4 periods.
+  let W = Math.max(Math.min(Math.round(periodsPerWindow * P0), Math.round(n / 3)), Math.round(4 * P0));
   if (W >= n) W = n;
   const k = W >= n ? 1 : Math.ceil((n - W) / (W / 2)) + 1;
 

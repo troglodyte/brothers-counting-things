@@ -12,11 +12,15 @@ import {
   type Line,
   type StripGeometry,
 } from './profile';
+import { skewness } from './signal';
 
 export interface CountOptions {
   /** Half-width in pixels of the band averaged along the stripes. */
   bandHalfWidth?: number;
-  /** Count dark lines instead of bright ones (affects the peak cross-check). */
+  /**
+   * Negate the profile. No longer changes the count: the period stage does
+   * not depend on polarity, and the peak stage picks its own (see countStrip).
+   */
   invert?: boolean;
   /** Target number of periods per window. */
   periodsPerWindow?: number;
@@ -103,7 +107,15 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
   });
   if (!per) return empty('No regular stripe pattern found along the line.');
 
-  const peaks = countPeaks(per.detrended, per.periodAt, ext, ext + geom.length);
+  // Count the narrow lines, whichever polarity they have. Thick items show
+  // as broad bodies separated by narrow lines: usually the shadowed gap
+  // between two items, sometimes a lit edge. On a broad body the brightest
+  // point is wherever a label, a gloss highlight or noise puts it, so
+  // counting body peaks adds or drops items. The narrow lines are the long
+  // tail of the brightness distribution, which the sign of the skew picks.
+  const edgeSign = skewness(per.detrended, ext, ext + geom.length) < 0 ? -1 : 1;
+  const edges = edgeSign < 0 ? per.detrended.map((v) => -v) : per.detrended;
+  const peaks = countPeaks(edges, per.periodAt, ext, ext + geom.length);
   const periodCount = Math.max(1, Math.round(per.count));
   const peakCount = peaks.count;
   const pxPerItem = per.meanPeriod;

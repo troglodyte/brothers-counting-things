@@ -102,6 +102,18 @@ export interface StackImageOptions {
   /** Multiplicative lighting gradient across the image, e.g. 0.3. */
   gradient?: number;
   missingEdgeRate?: number;
+  /**
+   * Brightness of one narrow bright band inside each item, at a random
+   * place in its middle half: a gold spine label or a gloss highlight.
+   */
+  highlight?: number;
+  /** Share of items that have the highlight (default 1). */
+  highlightRate?: number;
+  /**
+   * Width of the dark gap between items, px (default 0.2 px per item). Book
+   * stacks have gaps of 5 to 10 percent of an item: a narrow shadow line.
+   */
+  edgeWidthPx?: number;
   /** The line's two ends are offset sideways by +-skew px (a crooked tap). */
   lineSkewPx?: number;
   /** Background rows above and below the stack. */
@@ -137,7 +149,17 @@ export function synthStack(o: StackImageOptions): StackImage {
   for (let k = 0; k < N; k++) base[k] = 175 + 18 * gauss(rand);
   const depth = new Float64Array(N + 1);
   for (let i = 0; i <= N; i++) depth[i] = rand() < (o.missingEdgeRate ?? 0) ? 8 : 85 * (0.75 + 0.5 * rand());
-  const edgeW = Math.max(0.45, 0.2 * o.pxPerItem);
+  const edgeW = o.edgeWidthPx ?? Math.max(0.45, 0.2 * o.pxPerItem);
+  const highlight = o.highlight ?? 0;
+  const glint = new Float64Array(N).fill(NaN);
+  // Drawn only when used, so existing seeds give the same images.
+  if (highlight) {
+    for (let k = 0; k < N; k++) {
+      const at = b[k] + (b[k + 1] - b[k]) * (0.25 + 0.5 * rand());
+      if (rand() < (o.highlightRate ?? 1)) glint[k] = at;
+    }
+  }
+  const glintW = Math.max(1, 0.06 * o.pxPerItem);
   const gradient = o.gradient ?? 0;
   const noise = o.noise ?? 0;
 
@@ -151,7 +173,8 @@ export function synthStack(o: StackImageOptions): StackImage {
     if (s < 0 || s > T || a < 0.1 * W || a > 0.9 * W) return 35 * light;
     const { k, delta, boundary } = locate(b, s);
     const kk = Math.min(N - 1, k);
-    return (base[kk] - depth[boundary] * Math.exp(-((delta / edgeW) ** 2))) * light;
+    const shine = glint[kk] >= 0 ? highlight * Math.exp(-(((s - glint[kk]) / glintW) ** 2)) : 0;
+    return (base[kk] + shine - depth[boundary] * Math.exp(-((delta / edgeW) ** 2))) * light;
   };
 
   const data = new Uint8ClampedArray(W * H);
