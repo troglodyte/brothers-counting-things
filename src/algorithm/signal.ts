@@ -110,3 +110,24 @@ export function median(values: number[]): number {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : 0.5 * (s[m - 1] + s[m]);
 }
+
+/** Sample skewness of x[start, end): negative when the long tail is below the mean. */
+export function skewness(x: ArrayLike<number>, start: number, end: number): number {
+  const a = Math.max(0, Math.floor(start));
+  const b = Math.min(x.length, Math.ceil(end));
+  const n = b - a;
+  if (n < 3) return 0;
+  let mean = 0;
+  for (let i = a; i < b; i++) mean += x[i];
+  mean /= n;
+  let m2 = 0;
+  let m3 = 0;
+  for (let i = a; i < b; i++) {
+    const d = x[i] - mean;
+    m2 += d * d;
+    m3 += d * d * d;
+  }
+  m2 /= n;
+  m3 /= n;
+  return m2 > 0 ? m3 / m2 ** 1.5 : 0;
+}
