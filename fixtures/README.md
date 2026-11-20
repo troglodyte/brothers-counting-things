@@ -23,7 +23,7 @@ Put your photos here with a `manifest.json` next to them:
   it is filled in.
 - `trueCount` is your hand count, or `null` if you don't know it (the entry is
   then skipped by the harness but still listed by intake).
-- Optional `settings`: `{ "invert": true, "bandHalfWidth": 10 }` if that image
+- Optional `settings`: `{ "bandHalfWidth": 10 }` if that image
   needs non-default settings.
 
 Then:

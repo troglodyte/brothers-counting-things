@@ -17,11 +17,6 @@ import { skewness } from './signal';
 export interface CountOptions {
   /** Half-width in pixels of the band averaged along the stripes. */
   bandHalfWidth?: number;
-  /**
-   * Negate the profile. No longer changes the count: the period stage does
-   * not depend on polarity, and the peak stage picks its own (see countStrip).
-   */
-  invert?: boolean;
   /** Target number of periods per window. */
   periodsPerWindow?: number;
   /** Half-height of the straightened strip. */
@@ -62,7 +57,6 @@ export function countTolerance(n: number): number {
 
 export const DEFAULTS = {
   bandHalfWidth: 6,
-  invert: false,
   periodsPerWindow: 25,
   stripHalfHeight: 32,
 } as const;
@@ -77,7 +71,6 @@ export function countStack(img: ImageLike, line: Line, opts: CountOptions = {}):
 /** Count from an already straightened strip (browser path: the canvas does the straightening). */
 export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions = {}): CountResult {
   const band = opts.bandHalfWidth ?? DEFAULTS.bandHalfWidth;
-  const invert = opts.invert ?? DEFAULTS.invert;
   const warnings: string[] = [];
   const empty = (msg: string): CountResult => ({
     count: null,
@@ -100,7 +93,6 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
   if (angle.assumed) warnings.push('Could not measure the stripe direction; assumed square to the line.');
   const ext = geom.margin;
   const profile = sampleProfile(strip, geom, angle.angle, band, ext);
-  if (invert) for (let i = 0; i < profile.length; i++) profile[i] = -profile[i];
 
   const first = windowedPeriod(profile, ext, geom.length, {
     periodsPerWindow: opts.periodsPerWindow ?? DEFAULTS.periodsPerWindow,
@@ -162,7 +154,8 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
   } else if (diff <= tol) {
     confidence = per.score >= 0.6 ? 'good' : per.score >= 0.35 ? 'check' : 'low';
   } else {
-    if (pxPerItem > 8) {
+    // An edge count under 2 is no answer (nothing found), however thick the items.
+    if (pxPerItem > 8 && peakCount >= 2) {
       count = peakCount;
       method = 'peaks';
     }

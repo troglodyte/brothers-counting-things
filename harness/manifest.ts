@@ -11,7 +11,7 @@ export interface ManifestEntry {
   line: Line;
   trueCount: number | null;
   notes?: string;
-  settings?: Pick<CountOptions, 'invert' | 'bandHalfWidth'>;
+  settings?: Pick<CountOptions, 'bandHalfWidth'>;
 }
 
 /** The manifest lives next to the images: <dir>/manifest.json. */
