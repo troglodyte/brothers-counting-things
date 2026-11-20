@@ -114,6 +114,12 @@ export interface StackImageOptions {
    * stacks have gaps of 5 to 10 percent of an item: a narrow shadow line.
    */
   edgeWidthPx?: number;
+  /**
+   * Depth (grey levels) of a second dark line through the middle of every
+   * item, as wide as the gap lines: a printed stripe along the spine, or the
+   * seam of a two-tone spine. It halves the apparent period.
+   */
+  midLine?: number;
   /** The line's two ends are offset sideways by +-skew px (a crooked tap). */
   lineSkewPx?: number;
   /** Background rows above and below the stack. */
@@ -186,6 +192,7 @@ export function synthStack(o: StackImageOptions): StackImage {
       if (rand() < (o.highlightRate ?? 1)) glint[k] = at;
     }
   }
+  const midLine = o.midLine ?? 0;
   const glintW = Math.max(1, 0.06 * o.pxPerItem);
   // Stagger draws from its own generator, so existing seeds give the same images.
   const sheets: number[][] = Array.from({ length: N }, () => []);
@@ -227,6 +234,7 @@ export function synthStack(o: StackImageOptions): StackImage {
     const { k, delta, boundary } = locate(b, s);
     const kk = Math.min(N - 1, k);
     let shine = glint[kk] >= 0 ? highlight * Math.exp(-(((s - glint[kk]) / glintW) ** 2)) : 0;
+    if (midLine) shine -= midLine * Math.exp(-(((s - 0.5 * (b[kk] + b[kk + 1])) / edgeW) ** 2));
     for (const at of sheets[kk]) shine -= sheetDepth * Math.exp(-(((s - at) / sheetW) ** 2));
     return (base[kk] + shine - depth[boundary] * Math.exp(-((delta / edgeW) ** 2))) * light;
   };

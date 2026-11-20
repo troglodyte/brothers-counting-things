@@ -171,3 +171,102 @@ function keepInPhase<C extends { pos: number; prom: number }>(cands: C[], period
   }
   return out;
 }
+
+export interface HalfPeriodEvidence {
+  /**
+   * 'clear': tick heights alternate with phase parity beyond doubt, so
+   * there are two kinds of line of different depth. 'maybe': weaker
+   * alternation, or one parity's heights vary much more than the other's
+   * (two kinds of line of similar depth). 'no': neither.
+   */
+  alternation: 'no' | 'maybe' | 'clear';
+  /** |t| of the parity-signed height difference of adjacent ticks, and the number of pairs. */
+  heightT: number;
+  pairs: number;
+  /** Larger over smaller height variance of the two parities (>= 1), and the smaller sample. */
+  varianceRatio: number;
+  perParity: number;
+}
+
+/**
+ * Evidence that the ticks alternate between two kinds of line, i.e. that
+ * the period is probably half the item thickness.
+ *
+ * When every item shows a second line near its middle (a printed stripe
+ * along the spine, the seam of a two-tone spine), the period stage can lock
+ * onto half an item, and the ticks then fall on gaps and mid-item lines in
+ * turn. Both counts come out double and agree, so nothing else catches it.
+ * Ticks are split by phase parity: even or odd numbers of periods from the
+ * first tick (a gap of two periods, a missed tick, keeps the parity).
+ *
+ * - Heights: the two kinds of line rarely have the same depth. Adjacent
+ *   ticks are paired without overlap, the height difference signed by the
+ *   pair's parity (so a slow brightness drift cancels), and its mean tested
+ *   against zero. 'clear' needs |t| >= 4 + 12 / (pairs - 1) and 5 pairs;
+ *   'maybe' needs |t| >= 2.5 and 4 pairs. Unlocked synthetic stacks reach
+ *   |t| = 3.7 (14 ticks), the real photos with shifted lines and other band
+ *   widths 1.5. A stripe up to 0.7 of the gap depth usually gives 6 to 35.
+ * - Variance ('maybe' only): when the depths match on average, a printed
+ *   stripe is still more uniform than shadowed gaps. Same-parity second
+ *   differences (again drift-free) give each parity's height variance, and
+ *   their ratio must reach 10 with 4 per parity. Unlocked synthetic stacks
+ *   reach 20 with 5 per parity (small samples scatter widely), the real
+ *   photos 4.9. An equal-depth stripe on 20 or more items gives 34 to 800.
+ *
+ * 'maybe' only costs a "check" on a right count; 'clear' changes the count,
+ * so it must not fire on unlocked stacks (none of 228 synthetic, none of
+ * the 90 real-photo variants). Stacks of about five items or fewer have too
+ * few ticks for either test.
+ * `d` is the profile the ticks were found on, with the counted lines positive.
+ */
+export function halfPeriodEvidence(d: Float32Array, ticks: number[], periodAt: (index: number) => number): HalfPeriodEvidence {
+  const n = ticks.length;
+  const h = ticks.map((x) => d[Math.round(x)]);
+  // steps[i]: periods from tick i-1 to tick i; parity[i]: phase parity of tick i.
+  const steps = new Array<number>(n).fill(0);
+  const parity = new Array<number>(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    steps[i] = Math.max(1, Math.round((ticks[i] - ticks[i - 1]) / periodAt((ticks[i] + ticks[i - 1]) / 2)));
+    parity[i] = (parity[i - 1] + steps[i]) % 2;
+  }
+
+  const diffs: number[] = [];
+  for (let i = 1; i < n; i++) {
+    if (steps[i] !== 1) continue;
+    diffs.push(parity[i - 1] ? h[i] - h[i - 1] : h[i - 1] - h[i]);
+    i++; // tick i is used; the next pair starts after it
+  }
+  const pairs = diffs.length;
+  let heightT = 0;
+  if (pairs >= 2) {
+    const mean = diffs.reduce((a, b) => a + b, 0) / pairs;
+    const sd = Math.sqrt(diffs.reduce((a, b) => a + (b - mean) ** 2, 0) / (pairs - 1));
+    heightT = sd > 0 ? Math.abs(mean) / (sd / Math.sqrt(pairs)) : 0;
+  }
+
+  const ss = [0, 0];
+  const cnt = [0, 0];
+  for (let i = 2; i + 2 < n; i++) {
+    if (steps[i - 1] !== 1 || steps[i] !== 1 || steps[i + 1] !== 1 || steps[i + 2] !== 1) continue;
+    const c = h[i] - 0.5 * (h[i - 2] + h[i + 2]);
+    ss[parity[i]] += c * c;
+    cnt[parity[i]]++;
+  }
+  const perParity = Math.min(cnt[0], cnt[1]);
+  let varianceRatio = 1;
+  if (perParity > 0) {
+    const a = ss[0] / cnt[0];
+    const b = ss[1] / cnt[1];
+    varianceRatio = Math.max(a, b) / Math.max(1e-9, Math.min(a, b));
+  }
+
+  const clear = pairs >= 5 && heightT >= 4 + 12 / (pairs - 1);
+  const maybe = (pairs >= 4 && heightT >= 2.5) || (perParity >= 4 && varianceRatio >= 10);
+  return {
+    alternation: clear ? 'clear' : maybe ? 'maybe' : 'no',
+    heightT,
+    pairs,
+    varianceRatio,
+    perParity,
+  };
+}

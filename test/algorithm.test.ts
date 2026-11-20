@@ -248,3 +248,59 @@ describe('staggered stacks: groups of ~10 items spine-out, then ~10 pages-out', 
     expect(Math.abs(r.count! - 80)).toBeLessThanOrEqual(countTolerance(80));
   });
 });
+
+describe('a second line through the middle of every item (spine stripe)', () => {
+  // Both stages used to lock onto half an item and agree on double the
+  // count (20 -> 39, 23 -> 45, 60 -> 119) at good confidence.
+  const stack = (count: number, pxPerItem: number, midLine: number) =>
+    synthStack({
+      count,
+      pxPerItem,
+      noise: 3,
+      perspective: 0.1,
+      edgeWidthPx: Math.max(1.5, 0.06 * pxPerItem),
+      midLine,
+      seed: count + pxPerItem,
+    });
+
+  it('a stripe lighter than the gaps is not counted as an item, but asks for a check', () => {
+    // Items laid alternately reversed give the same profile, so the
+    // corrected count is never "good".
+    for (const count of [20, 23, 60]) {
+      for (const px of [30, 120]) {
+        for (const mid of [40, 60]) {
+          const img = stack(count, px, mid);
+          const r = countStack(img, img.line);
+          expect([count, px, mid, r.count, r.confidence]).toEqual([count, px, mid, count, 'check']);
+        }
+      }
+    }
+  });
+
+  it('a stripe is never a wrong good: lighter ones from 7 items, equal-depth ones from 20', () => {
+    // Small stacks have too few ticks to correct with confidence, and lines
+    // of equal depth are told apart only by how much their depth varies:
+    // then the double count stays, but must say "check". Known gap: an
+    // equal-depth stripe on 10 or fewer items can still pass as good.
+    for (const count of [7, 10, 20, 23, 60]) {
+      for (const px of [30, 120]) {
+        for (const mid of count >= 20 ? [40, 60, 85] : [40, 60]) {
+          const img = stack(count, px, mid);
+          const r = countStack(img, img.line);
+          const ok = Math.abs(r.count! - count) <= countTolerance(count);
+          expect([count, px, mid, ok || r.confidence !== 'good']).toEqual([count, px, mid, true]);
+        }
+      }
+    }
+  });
+
+  it('ordinary stacks are not taken for a stripe', () => {
+    for (const count of [8, 20, 23, 60]) {
+      for (const px of [30, 130]) {
+        const img = synthStack({ count, pxPerItem: px, edgeWidthPx: Math.max(1.5, 0.06 * px), noise: 4, perspective: 0.2, seed: count });
+        const r = countStack(img, img.line);
+        expect([count, px, r.count, r.warnings.some((w) => w.startsWith('Every other line'))]).toEqual([count, px, count, false]);
+      }
+    }
+  });
+});

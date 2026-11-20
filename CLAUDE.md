@@ -53,6 +53,7 @@ If straightening changes in one path, it has to change in the other too, or the 
    - If the two counts agree within `countTolerance`, it reports the period count.
    - If they disagree, items thicker than 8 px use the peak count and thinner items keep the period count. Confidence drops to *check* or *low*.
    - Under 2.5 px per item, or when the peak count is about 2× the period count (the period locked onto double), it reports "too far away".
+   - Half-period lock (2026-11-20): a stripe through the middle of every item makes both stages count about 2N−1, and they agree. `peaks.halfPeriodEvidence` tests whether tick heights alternate with phase parity (a paired t-test), or whether one parity varies much more than the other. If the result is *clear* and the edge count at twice the period agrees, it reports `scalePeriod(per, 2)`; if it is *maybe*, it keeps the count. Either way confidence is capped at *check*: items laid alternately reversed give the same profile. Known gap: an equal-depth stripe on 10 or fewer items can still pass as *good*. Neither test fires on the real photos (all 90 robustness variants).
 
 `signal.ts` contains the shared DSP primitives: box, Gaussian, detrend, normalized autocorrelation, parabolic offset.
 

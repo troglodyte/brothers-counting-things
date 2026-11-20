@@ -288,3 +288,21 @@ function measureWindows(
     periodAt,
   };
 }
+
+/**
+ * The same measurement with every period multiplied by `factor` (count.ts
+ * uses 2 when the ticks show a lock onto half an item). The windows measured
+ * the half period precisely, so scaling it is more reliable than searching
+ * again near twice it, where three half periods also correlate strongly.
+ * The line runs between item centres, so the count is (count - 1) / factor + 1.
+ */
+export function scalePeriod(per: PeriodResult, factor: number): PeriodResult {
+  return {
+    ...per,
+    globalPeriod: per.globalPeriod * factor,
+    windows: per.windows.map((w) => ({ ...w, period: w.period * factor, measured: w.measured * factor })),
+    count: (per.count - 1) / factor + 1,
+    meanPeriod: per.meanPeriod * factor,
+    periodAt: (x) => per.periodAt(x) * factor,
+  };
+}

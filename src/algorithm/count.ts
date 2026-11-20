@@ -1,7 +1,7 @@
 // Combine the period count and the peak cross-check into one answer.
 
-import { countPeaks } from './peaks';
-import { windowedPeriod, type PeriodWindow } from './period';
+import { countPeaks, halfPeriodEvidence } from './peaks';
+import { scalePeriod, windowedPeriod, type PeriodResult, type PeriodWindow } from './period';
 import {
   estimateStripeAngle,
   extractStrip,
@@ -102,10 +102,10 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
   const profile = sampleProfile(strip, geom, angle.angle, band, ext);
   if (invert) for (let i = 0; i < profile.length; i++) profile[i] = -profile[i];
 
-  const per = windowedPeriod(profile, ext, geom.length, {
+  const first = windowedPeriod(profile, ext, geom.length, {
     periodsPerWindow: opts.periodsPerWindow ?? DEFAULTS.periodsPerWindow,
   });
-  if (!per) return empty('No regular stripe pattern found along the line.');
+  if (!first) return empty('No regular stripe pattern found along the line.');
 
   // Count the narrow lines, whichever polarity they have. Thick items show
   // as broad bodies separated by narrow lines: usually the shadowed gap
@@ -113,9 +113,35 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
   // point is wherever a label, a gloss highlight or noise puts it, so
   // counting body peaks adds or drops items. The narrow lines are the long
   // tail of the brightness distribution, which the sign of the skew picks.
-  const edgeSign = skewness(per.detrended, ext, ext + geom.length) < 0 ? -1 : 1;
-  const edges = edgeSign < 0 ? per.detrended.map((v) => -v) : per.detrended;
-  const peaks = countPeaks(edges, per.periodAt, ext, ext + geom.length);
+  const edgeSign = skewness(first.detrended, ext, ext + geom.length) < 0 ? -1 : 1;
+  const edges = edgeSign < 0 ? first.detrended.map((v) => -v) : first.detrended;
+  const edgeCount = (p: PeriodResult) => countPeaks(edges, p.periodAt, ext, ext + geom.length);
+  let per = first;
+  let peaks = edgeCount(first);
+
+  // A second line through the middle of every item (a stripe on the spine)
+  // can lock both stages onto half an item, and they then agree on double
+  // the count. When the tick heights alternate with parity and the edge
+  // count at twice the period agrees, report that count. Either way the
+  // answer is never "good": a stack whose every other item differs (items
+  // laid alternately reversed) gives the same profile, and then the first
+  // count was right. The warning names both.
+  let halfSuspect = false;
+  const half = halfPeriodEvidence(edges, peaks.ticks, per.periodAt);
+  if (half.alternation !== 'no') {
+    halfSuspect = true;
+    const doubled = scalePeriod(first, 2);
+    const doubledPeaks = edgeCount(doubled);
+    const n = Math.round(doubled.count);
+    const m = Math.max(1, Math.round(first.count));
+    if (half.alternation === 'clear' && Math.abs(doubledPeaks.count - n) <= countTolerance(n)) {
+      per = doubled;
+      peaks = doubledPeaks;
+      warnings.push(`Every other line differs: counted ${n}, taking each item to have a stripe through it. If every other item differs instead, it is ${m}.`);
+    } else {
+      warnings.push(`Every other line differs: counted ${m}, but if each item has a stripe through it, it is ${n}.`);
+    }
+  }
   const periodCount = Math.max(1, Math.round(per.count));
   const peakCount = peaks.count;
   const pxPerItem = per.meanPeriod;
@@ -143,6 +169,7 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
     warnings.push(`The two methods disagree (${periodCount} by spacing, ${peakCount} by edges).`);
     confidence = diff <= 2 * tol && per.score >= 0.35 ? 'check' : 'low';
   }
+  if (halfSuspect && confidence === 'good') confidence = 'check';
   if (per.strongShare < 0.5) warnings.push('Parts of the stack have no clear stripe pattern (blur, glare or shadow?).');
   if (per.spread > 0.05) warnings.push('Item spacing is uneven along the stack.');
 
