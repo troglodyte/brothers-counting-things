@@ -137,6 +137,9 @@ export function coarsePeriod(profile: Float32Array, start: number, end: number):
   return pick;
 }
 
+/** Largest relative change the multiple-lag refinement may make (it corrects a 1-2 percent bias). */
+const REFINE_AGREE = 0.03;
+
 function measureWindows(
   profile: Float32Array,
   coreStart: number,
@@ -177,6 +180,10 @@ function measureWindows(
     // A parabola through integer lags around a peak only a few samples wide
     // is biased toward the integer lag (1-2 percent at 3-4 px per item).
     // Refining at the m-th multiple of the period divides that bias by m.
+    // The refined period must stay within REFINE_AGREE of the first one: in
+    // a staggered stack whose gap lines change polarity every ~10 items, the
+    // m-th multiple spans a flip and its peak can sit half a period off
+    // (6 percent long at m = 8 on a synthetic 80-item stack).
     if (strong) {
       const m = Math.max(1, Math.floor(W / (3 * measured)));
       if (m > 1) {
@@ -187,7 +194,8 @@ function measureWindows(
           let bm = lo;
           for (let l = lo; l <= hi; l++) if (rm[l] > rm[bm]) bm = l;
           const ok = rm[bm] > rm[bm - 1] && rm[bm] >= rm[bm + 1] && rm[bm] >= strongThreshold;
-          if (ok) measured = (bm + parabolicOffset(rm[bm - 1], rm[bm], rm[bm + 1])) / m;
+          const refined = (bm + parabolicOffset(rm[bm - 1], rm[bm], rm[bm + 1])) / m;
+          if (ok && Math.abs(refined - measured) <= REFINE_AGREE * measured) measured = refined;
         }
       }
     }

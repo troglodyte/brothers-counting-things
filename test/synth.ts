@@ -118,7 +118,34 @@ export interface StackImageOptions {
   lineSkewPx?: number;
   /** Background rows above and below the stack. */
   marginPx?: number;
+  /** Alternating groups of spine-out and pages-out items (see StaggerOptions). */
+  stagger?: StaggerOptions;
   seed?: number;
+}
+
+/**
+ * A staggered stack of one title: groups of about `groupSize` items show
+ * their folded spines, the next group their page edges, and so on. Modelled
+ * on real photos 6815/6816: the page groups are darker, their gap lines are
+ * weaker, and fine sheet lines run inside each item; where one group
+ * overhangs the next there is a deeper shadow line.
+ */
+export interface StaggerOptions {
+  /** Mean items per group (each group varies by up to +-2). Default 10. */
+  groupSize?: number;
+  /** Body brightness change of page items, grey levels. Default -40. */
+  pageShift?: number;
+  /**
+   * Gap depth of page items relative to spine items. Default 0.5 (weaker
+   * dark gaps); negative gives bright gap lines (flipped polarity).
+   */
+  pageGap?: number;
+  /** Fine dark sheet lines inside each page item. Default 0. */
+  pageLines?: number;
+  /** Depth of each sheet line, grey levels. Default 30. */
+  pageLineDepth?: number;
+  /** Gap depth at a group boundary relative to a spine gap. Default 1.5. */
+  groupShadow?: number;
 }
 
 export interface StackImage {
@@ -160,6 +187,32 @@ export function synthStack(o: StackImageOptions): StackImage {
     }
   }
   const glintW = Math.max(1, 0.06 * o.pxPerItem);
+  // Stagger draws from its own generator, so existing seeds give the same images.
+  const sheets: number[][] = Array.from({ length: N }, () => []);
+  const sheetW = 0.7;
+  let sheetDepth = 0;
+  if (o.stagger) {
+    const st = o.stagger;
+    const srand = rng((o.seed ?? 7) * 7919 + 17);
+    const page = new Array<boolean>(N);
+    let isPage = srand() < 0.5;
+    for (let k = 0; k < N; ) {
+      const size = Math.max(1, Math.round((st.groupSize ?? 10) + 4 * srand() - 2));
+      for (let j = 0; j < size && k < N; j++, k++) page[k] = isPage;
+      isPage = !isPage;
+    }
+    sheetDepth = st.pageLineDepth ?? 30;
+    for (let k = 0; k < N; k++) {
+      if (!page[k]) continue;
+      base[k] += st.pageShift ?? -40;
+      for (let j = 0; j < (st.pageLines ?? 0); j++) sheets[k].push(b[k] + (b[k + 1] - b[k]) * (0.15 + 0.7 * srand()));
+    }
+    // Boundary i lies between items i-1 and i; the stack's outer edges keep their gap.
+    for (let i = 1; i < N; i++) {
+      if (page[i - 1] !== page[i]) depth[i] *= st.groupShadow ?? 1.5;
+      else if (page[i]) depth[i] *= st.pageGap ?? 0.5;
+    }
+  }
   const gradient = o.gradient ?? 0;
   const noise = o.noise ?? 0;
 
@@ -173,7 +226,8 @@ export function synthStack(o: StackImageOptions): StackImage {
     if (s < 0 || s > T || a < 0.1 * W || a > 0.9 * W) return 35 * light;
     const { k, delta, boundary } = locate(b, s);
     const kk = Math.min(N - 1, k);
-    const shine = glint[kk] >= 0 ? highlight * Math.exp(-(((s - glint[kk]) / glintW) ** 2)) : 0;
+    let shine = glint[kk] >= 0 ? highlight * Math.exp(-(((s - glint[kk]) / glintW) ** 2)) : 0;
+    for (const at of sheets[kk]) shine -= sheetDepth * Math.exp(-(((s - at) / sheetW) ** 2));
     return (base[kk] + shine - depth[boundary] * Math.exp(-((delta / edgeW) ** 2))) * light;
   };
 

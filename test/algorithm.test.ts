@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countStack } from '../src/algorithm/count';
+import { countStack, countTolerance } from '../src/algorithm/count';
 import { countPeaks } from '../src/algorithm/peaks';
 import { estimateGlobalPeriod, windowedPeriod } from '../src/algorithm/period';
 import { detrend, parabolicOffset } from '../src/algorithm/signal';
@@ -186,5 +186,65 @@ describe('thick items: books and thick magazines, a few dozen per stack', () => 
       expect(countPeaks(gaps, r.periodAt, from, to).count).toBe(15);
       expect(countPeaks(r.detrended, r.periodAt, from, to).count).toBe(15);
     }
+  });
+});
+
+describe('staggered stacks: groups of ~10 items spine-out, then ~10 pages-out', () => {
+  // Modelled on real photos 6815/6816 (60 thin brochures, one title): the
+  // pages-out groups are darker, their gap lines weaker, and fine sheet
+  // lines run inside each item.
+  it('fine sheet lines in the page groups are not counted as items (thin brochures)', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const img = synthStack({
+        count: 60,
+        pxPerItem: 30,
+        noise: 5,
+        perspective: 0.08,
+        stagger: { pageShift: -45, pageGap: 0.4, pageLines: 4 },
+        seed,
+      });
+      const r = countStack(img, img.line);
+      // The two methods agree, so the >8 px rule does not switch to edges.
+      expect([seed, r.count]).toEqual([seed, 60]);
+      expect([seed, Math.abs(r.peakCount! - 60) <= countTolerance(60)]).toEqual([seed, true]);
+    }
+  });
+
+  it('thick items whose page groups have bright gap lines are exact', () => {
+    // Not seen on the real photos, but the gap polarity could flip between
+    // groups. The edge stage counts dark lines everywhere; in the bright-gap
+    // groups it used to pick up sheet lines and over-count.
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const img = synthStack({
+        count: 22,
+        pxPerItem: 160,
+        edgeWidthPx: 10,
+        noise: 5,
+        perspective: 0.08,
+        stagger: { pageShift: -40, pageGap: -0.6, pageLines: 3 },
+        seed,
+      });
+      const r = countStack(img, img.line);
+      expect([seed, r.count]).toEqual([seed, 22]);
+    }
+  });
+
+  it('a polarity flip every ~10 items does not pull the spacing half a period long', () => {
+    // With bright gap lines in every other group, the autocorrelation at
+    // 8 periods spans a flip; refining there gave a period 6 percent long
+    // (75 of 80 items) at good confidence.
+    const img = synthStack({
+      count: 80,
+      pxPerItem: 31.8,
+      width: 320,
+      noise: 5,
+      tiltDeg: -2.5,
+      perspective: 0.07,
+      stagger: { pageShift: -28, pageGap: -0.63, pageLines: 4 },
+      seed: 6,
+    });
+    const r = countStack(img, img.line);
+    expect(Math.abs(r.periodCount! - 80)).toBeLessThanOrEqual(countTolerance(80));
+    expect(Math.abs(r.count! - 80)).toBeLessThanOrEqual(countTolerance(80));
   });
 });
