@@ -10,3 +10,8 @@ fixtures/*
 # Generated
 fixtures-synthetic/
 public/icon-*.png
+
+# Local originals: the stack photos (copies live in fixtures/) and the
+# archive this repo was first unpacked from.
+images/
+*.zip
