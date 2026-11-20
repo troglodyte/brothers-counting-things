@@ -13,6 +13,8 @@
     <section id="screen-camera" class="screen screen-full">
       <div class="viewfinder">
         <video id="video" playsinline muted></video>
+        <canvas id="live-overlay" class="live-overlay" hidden></canvas>
+        <div id="live-readout" class="live-readout" hidden aria-live="polite"></div>
         <div id="camera-off" class="camera-off" hidden>
           <h1>Stack Counter</h1>
           <p id="camera-off-msg" class="sub">The camera isn't available here.</p>
@@ -21,7 +23,7 @@
             <input id="input-camera" type="file" accept="image/*" capture="environment" hidden />
           </label>
         </div>
-        <p class="vf-hint">Fit the whole stack in, side on, bottom item to top item.</p>
+        <p id="vf-hint" class="vf-hint">Fit the whole stack in, side on, bottom item to top item.</p>
         <div class="vf-top">
           <button id="btn-torch" class="pill" type="button" hidden aria-pressed="false">Light</button>
           <button id="btn-list" class="pill" type="button">List <span id="list-badge">0</span></button>
@@ -33,7 +35,7 @@
           <input id="input-gallery" type="file" accept="image/*" hidden />
         </label>
         <button id="btn-shutter" class="shutter" type="button" aria-label="Take photo"></button>
-        <span class="vf-spacer"></span>
+        <button id="btn-mode" class="pill pill-dark vf-mode" type="button" aria-pressed="true">Auto line</button>
       </div>
       <p id="capture-error" class="error vf-error" hidden></p>
     </section>

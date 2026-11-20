@@ -111,6 +111,53 @@ h1 {
   display: block;
 }
 
+.live-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.live-overlay[hidden],
+.live-readout[hidden] {
+  display: none;
+}
+
+/* The live count, beside the guide line at mid-height. */
+.live-readout {
+  position: absolute;
+  top: 50%;
+  left: calc(50% + 28px);
+  transform: translateY(-50%);
+  min-width: 1.6em;
+  padding: 2px 12px;
+  border-radius: 12px;
+  font-size: 2.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgba(20, 23, 28, 0.7);
+  border-left: 6px solid transparent;
+  pointer-events: none;
+}
+
+.live-readout:empty {
+  display: none;
+}
+
+.live-readout.good {
+  border-left-color: var(--good);
+}
+
+.live-readout.check {
+  border-left-color: var(--check);
+}
+
+.live-readout.low {
+  border-left-color: var(--low);
+}
+
 .vf-hint {
   position: absolute;
   left: 0;
@@ -191,6 +238,10 @@ h1 {
 
 .vf-bar .pill {
   justify-self: start;
+}
+
+.vf-bar .vf-mode {
+  justify-self: end;
 }
 
 .shutter {

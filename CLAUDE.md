@@ -27,6 +27,7 @@ npm run intake  -- fixtures            # Phase 0: image sizes and px-per-item ta
 npm run harness -- fixtures            # accuracy gate on the real photos
 # harness flags: --min-share 0.9, --if-present, --json out.json
 npx tsx harness/robust.ts              # robustness: lines shifted ±75/±150 px, bands 4/6/10 (want 90/90, 0 wrong good)
+npx tsx harness/autoends.ts [-v]       # live mode's end finder: lines 15/30/50% too long (14/18, 0 wrong good on 2026-11-20)
 ```
 
 Add `?dev` to the app URL to show Details → Developer, with a true-count box, "Copy annotation JSON" (produces `manifest.json` entries for the harness) and "Save photo". On the LAN dev server there is no HTTPS, so the in-app camera falls back to the phone's camera app. The manifest format is in `fixtures/README.md`: each entry has `image`, `line {x1,y1,x2,y2}` in full-resolution pixels after EXIF rotation, `trueCount` (or `null`), and optional `settings`.
@@ -57,6 +58,8 @@ If straightening changes in one path, it has to change in the other too, or the 
 
 `signal.ts` contains the shared DSP primitives: box, Gaussian, detrend, normalized autocorrelation, parabolic offset.
 
+**Live mode (Auto line, the default since 2026-11-20).** The viewfinder shows a dashed guide line down the middle and counts the stack under it about 6 times a second (`ui/live.ts`). `algorithm/autoends.findEnds` finds the stack on the guide: stripe energy above half the stack's level, bounded by colour similarity (`stackLook`) of item-sized slices to the middle third, so textured surroundings and the stack behind are cut off. The ordinary count then runs between the found end items; counting the whole guide line lets the background skew the period. The shutter finds the ends again on the frame taken and opens the photo screen with the line placed, so a wrong end is one drag. "Auto line / Draw line" in the viewfinder switches to the old mode (saved in localStorage). `straightenStrip` reads the `<video>` directly, with no frame copy.
+
 **UI.** The UI is vanilla DOM with no framework, by design. `main.ts` connects three screens: the viewfinder (`ui/camera.ts`, getUserMedia, grabs a video frame; falls back to a file input without HTTPS or camera permission, and `ui/capture.ts` decodes gallery files), line placement (`ui/placement.ts`: one-finger drag draws the line, handles adjust it, two fingers pinch/pan, a loupe, ticks drawn on the photo; its own gesture code because a pan library would steal the one-finger drag) with the live count under it (`ui/result.ts`, details collapsed), and the running list (`ui/tally.ts`, kept in localStorage). The count runs on every animation frame while dragging (about 10 ms).
 
 **Stack names.** After each count the name box is filled, unless the user has typed in it. First choice is a title the user named before, matched by look: `algorithm/appearance.ts` builds a colour histogram of the spines around the line, and `ui/titles.ts` stores up to 8 looks per name in localStorage. A match needs a score of at least 0.85 and a clear lead over the runner-up title. On the real photos the same stack scores 0.98 and different titles 0.67 or less. Failing a match, `ui/spine.ts` reads the spines with Tesseract.js at three sizes and keeps the reading that recurs across items. In the browser it got "Bearing Witness" on 6811, only "School" on 6812, and nothing on the others, so treat it as a fallback. Tesseract's sparse-text mode is touchy about scale, and one-step canvas downscaling blurs the letters too much, hence `shrink()`. The OCR files (about 6 MB) are lazy-loaded from `./tesseract/` and cached at runtime; `vite.config.ts` copies them in and `ocr/README.md` has the details. A blank name shows as "Stack N". `vite.config.ts` sets `base: './'` so the same build works on Pages and on the LAN dev server. `vite-plugin-pwa` handles offline use and home-screen install.
@@ -66,6 +69,7 @@ If straightening changes in one path, it has to change in the other too, or the 
 - `algorithm.test.ts`: signal helpers, period, peaks, `countStack` on synthetic photos, thick items, staggered stacks, half-period (spine stripe) lock.
 - `paths.test.ts`: browser vs harness straightening, placement resize rules.
 - `names.test.ts`: stack look, `pickTitle`, `closestName`.
+- `autoends.test.ts`: colour strip vs gray strip, `findEnds` on synthetic stacks with background past the ends.
 - `app.test.ts`: `pinchTakeover`, saved data, camera lifecycle.
 
 ## Constraints from the plan

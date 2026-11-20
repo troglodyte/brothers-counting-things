@@ -117,6 +117,12 @@ export class Placement {
     this.view.width = this.view.height = 0;
   }
 
+  /** Place the line as if the user had drawn it (live mode's found ends). */
+  setPoints(points: Point[]): void {
+    this.points = points.map((p) => ({ ...p }));
+    this.changed(false);
+  }
+
   /** Tick marks (image coordinates) drawn across the line, one per detected item. */
   setTicks(ticks: Point[]): void {
     this.ticks = ticks;

@@ -4,14 +4,18 @@ import { countStrip, DEFAULTS, type CountOptions, type CountResult } from './alg
 import { stripGeometry, toGray, type Line, type Point } from './algorithm/profile';
 import { Camera } from './ui/camera';
 import { decodePhoto, makeViewCanvas, straightenStrip } from './ui/capture';
+import { autoCount, LiveView } from './ui/live';
 import { Placement } from './ui/placement';
 import { renderDetails, renderSummary } from './ui/result';
 import { closestName, readSpine } from './ui/spine';
 import { Tally } from './ui/tally';
 import { Titles } from './ui/titles';
 
-// Flow per stack: shutter -> drag first-to-last (count follows the finger)
-// -> "Save & next" adds it to the list and returns to the viewfinder.
+// Flow per stack (Auto line, the default): aim the guide line down the stack,
+// the count follows live -> shutter opens the photo with the line on the found
+// ends -> "Save & next". Draw line mode: shutter -> drag first-to-last ->
+// "Save & next". Either way the photo screen is the same, and a wrong end is
+// one drag away.
 
 type ScreenName = 'camera' | 'place' | 'list';
 
@@ -32,6 +36,10 @@ const els = {
   cameraOff: $('camera-off'),
   cameraOffMsg: $('camera-off-msg'),
   shutter: $<HTMLButtonElement>('btn-shutter'),
+  mode: $<HTMLButtonElement>('btn-mode'),
+  vfHint: $('vf-hint'),
+  liveOverlay: $<HTMLCanvasElement>('live-overlay'),
+  liveReadout: $('live-readout'),
   torch: $<HTMLButtonElement>('btn-torch'),
   listOpen: $<HTMLButtonElement>('btn-list'),
   listBadge: $('list-badge'),
@@ -72,6 +80,19 @@ const camera = new Camera(els.video);
 const tally = new Tally();
 const titles = new Titles();
 
+// ---- Line mode: Auto (live, ends found) or Draw (the user drags the line) ----
+
+type LineMode = 'auto' | 'draw';
+const MODE_KEY = 'stack-counter.mode.v1';
+function loadMode(): LineMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'draw' ? 'draw' : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+let lineMode = loadMode();
+
 const state: {
   screen: ScreenName;
   bitmap: ImageBitmap | null;
@@ -102,6 +123,8 @@ const state: {
   leaving: false,
 };
 
+const live = new LiveView(els.video, els.liveOverlay, els.liveReadout, () => state.settings);
+
 if (new URLSearchParams(location.search).has('dev')) els.devTools.hidden = false;
 
 // ---- Navigation (Android back button steps back to the viewfinder) ----
@@ -111,6 +134,7 @@ function show(name: ScreenName, push = true): void {
   for (const [k, el] of Object.entries(screens)) el.hidden = k !== name;
   if (push && history.state?.screen !== name) history.pushState({ screen: name }, '');
   if (name === 'camera') void startCamera();
+  syncLive();
   // Stay live behind the photo screen so "Save & next" is instant; the list can wait.
   if (name === 'list') camera.stop();
   if (name === 'list') renderList();
@@ -137,6 +161,7 @@ async function startCamera(): Promise<void> {
     els.shutter.disabled = false;
     els.torch.hidden = !camera.hasTorch;
     setTorchState(false); // a fresh stream starts with the light off
+    syncLive();
   } catch (err) {
     const name = (err as Error).name;
     cameraUnavailable(
@@ -157,12 +182,50 @@ function cameraUnavailable(msg: string): void {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) camera.stop();
   else if (state.screen === 'camera') void startCamera();
+  syncLive();
+});
+
+/** Count live only on the viewfinder, with the camera on, in Auto line mode. */
+function syncLive(): void {
+  if (state.screen === 'camera' && camera.running && lineMode === 'auto' && !document.hidden) live.start();
+  else live.stop();
+}
+
+function applyMode(): void {
+  const auto = lineMode === 'auto';
+  els.mode.textContent = auto ? 'Auto line' : 'Draw line';
+  els.mode.setAttribute('aria-pressed', String(auto));
+  els.mode.setAttribute('aria-label', auto ? 'Auto line: on. Tap to draw the line yourself.' : 'Draw line: on. Tap to find the ends automatically.');
+  els.vfHint.textContent = auto
+    ? 'Aim the dashed line down the stack, top to bottom.'
+    : 'Fit the whole stack in, side on, bottom item to top item.';
+  syncLive();
+}
+
+els.mode.addEventListener('click', () => {
+  lineMode = lineMode === 'auto' ? 'draw' : 'auto';
+  try {
+    localStorage.setItem(MODE_KEY, lineMode);
+  } catch {
+    // Private mode: the choice lasts for this session only.
+  }
+  applyMode();
 });
 
 els.shutter.addEventListener('click', async () => {
   try {
     const bitmap = await camera.grab();
-    openPhoto(bitmap, `stack-${stamp()}.jpg`);
+    // Find the ends again on the frame actually taken; the live one may be a moment old.
+    // Nothing found: the photo opens without a line, as in Draw line mode.
+    let line: Line | undefined;
+    if (lineMode === 'auto') {
+      try {
+        line = autoCount(bitmap, bitmap.width, bitmap.height, state.settings)?.line;
+      } catch {
+        line = undefined;
+      }
+    }
+    openPhoto(bitmap, `stack-${stamp()}.jpg`, line);
   } catch (err) {
     showCaptureError(`Could not take the photo (${(err as Error).message}).`);
   }
@@ -209,7 +272,7 @@ function stamp(): string {
 
 // ---- Screen 2: draw the line, count live ----
 
-function openPhoto(bitmap: ImageBitmap, fileName: string): void {
+function openPhoto(bitmap: ImageBitmap, fileName: string, line?: Line): void {
   els.captureError.hidden = true;
   closePhoto();
   state.bitmap = bitmap;
@@ -231,6 +294,7 @@ function openPhoto(bitmap: ImageBitmap, fileName: string): void {
   els.save.disabled = true;
   show('place');
   state.placement = new Placement(els.stage, bitmap, makeViewCanvas(bitmap), onPointsChange);
+  if (line) state.placement.setPoints([{ x: line.x1, y: line.y1 }, { x: line.x2, y: line.y2 }]);
 }
 
 function closePhoto(): void {
@@ -482,4 +546,5 @@ els.listClear.addEventListener('click', () => {
 // ---- Start ----
 
 updateListBadge();
+applyMode();
 show('camera', false);

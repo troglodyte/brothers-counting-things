@@ -142,6 +142,48 @@ export function extractStrip(img: ImageLike, line: Line, geom: StripGeometry): G
   return { width: W, height: H, data: out };
 }
 
+/**
+ * Colour version of extractStrip: the same sampling grid, bilinear per channel,
+ * RGBA out. Points outside the image are black (as the browser's canvas leaves
+ * them), which stackLook skips.
+ */
+export function extractColourStrip(img: ImageLike, line: Line, geom: StripGeometry): ImageLike {
+  const { width: W, height: H } = stripSize(geom);
+  const L = geom.length || 1;
+  const dx = (line.x2 - line.x1) / L;
+  const dy = (line.y2 - line.y1) / L;
+  const ch = img.channels ?? 4;
+  const iw = img.width;
+  const ih = img.height;
+  const d = img.data;
+  const out = new Uint8ClampedArray(W * H * 4);
+  for (let v = 0; v < H; v++) {
+    const b = v - geom.halfHeight;
+    for (let u = 0; u < W; u++) {
+      const a = u - geom.margin;
+      const x = line.x1 + a * dx - b * dy - 0.5;
+      const y = line.y1 + a * dy + b * dx - 0.5;
+      if (x < -0.5 || y < -0.5 || x > iw - 0.5 || y > ih - 0.5) continue;
+      const xc = Math.max(0, Math.min(iw - 1, x));
+      const yc = Math.max(0, Math.min(ih - 1, y));
+      const x0 = Math.floor(xc);
+      const y0 = Math.floor(yc);
+      const x1 = Math.min(x0 + 1, iw - 1);
+      const y1 = Math.min(y0 + 1, ih - 1);
+      const fx = xc - x0;
+      const fy = yc - y0;
+      const o = (v * W + u) * 4;
+      for (let c = 0; c < 3; c++) {
+        const k = ch < 3 ? 0 : c;
+        const at = (px: number, py: number) => d[(py * iw + px) * ch + k];
+        out[o + c] = (at(x0, y0) * (1 - fx) + at(x1, y0) * fx) * (1 - fy) + (at(x0, y1) * (1 - fx) + at(x1, y1) * fx) * fy;
+      }
+      out[o + 3] = 255;
+    }
+  }
+  return { width: W, height: H, data: out, channels: 4 };
+}
+
 function sampleGray(g: Gray, x: number, y: number): number {
   const w = g.width;
   const h = g.height;

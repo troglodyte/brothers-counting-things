@@ -31,9 +31,10 @@ export function makeViewCanvas(bitmap: ImageBitmap): HTMLCanvasElement {
 /**
  * Draw the band under the line, rotated so the line runs left to right along
  * the middle row, at full resolution. Reads only these pixels, never the
- * whole 50 MP photo.
+ * whole 50 MP photo. The source is a photo, or the live <video> itself (its
+ * current frame at stream resolution; no frame copy).
  */
-export function straightenStrip(bitmap: ImageBitmap, line: Line, geom: StripGeometry): { canvas: HTMLCanvasElement; image: ImageData } {
+export function straightenStrip(bitmap: ImageBitmap | HTMLVideoElement, line: Line, geom: StripGeometry): { canvas: HTMLCanvasElement; image: ImageData } {
   const { width, height } = stripSize(geom);
   const canvas = document.createElement('canvas');
   canvas.width = width;
