@@ -1,8 +1,10 @@
 # Stack Counter
 
 Count a stack of brochures or magazines from a phone photo. Open it in the
-phone browser, take a photo of the side of the stack, tap the first item, tap
-the last item, read the number.
+phone browser, point the camera at the side of the stack, press the shutter,
+drag from the first item to the last, and the count follows your finger.
+"Save & next" adds it to a running list (copy or share it when you're done)
+and goes straight back to the camera.
 
 **Use it:** <https://troglodyte.github.io/brothers-counting-things/>
 (add `?dev` to the URL for the developer tools). Every push to `main`
@@ -33,21 +35,22 @@ The line runs from the **middle of the first item to the middle of the last
 item**, so the count is `length / period + 1`.
 
 Code: [`src/algorithm/`](src/algorithm) (pure functions, identical in the
-browser and in Node), [`src/ui/`](src/ui) (vanilla DOM, `@panzoom/panzoom`
-for pinch zoom).
+browser and in Node), [`src/ui/`](src/ui) (vanilla DOM, no dependencies).
 
 ## Develop
 
 ```bash
 npm install
 npm run dev          # serves on the LAN; open http://<pc-ip>:5173 on the phone
+                     # (the in-app camera needs HTTPS, so on the LAN it falls
+                     # back to the phone's camera app)
 npm test             # Vitest: synthetic profiles and synthetic photos
 npm run build        # icons, type check, static build into dist/
 ```
 
-Add `?dev` to the URL to show the developer tools on the result screen
-(Settings → Developer → "Copy annotation JSON"), which produce manifest
-entries for the accuracy harness.
+Add `?dev` to the URL to show the developer tools under Details
+(Developer → "Copy annotation JSON" and "Save photo"), which produce manifest
+entries and photos for the accuracy harness.
 
 ## Accuracy harness
 

@@ -1,11 +1,16 @@
 import './style.css';
 import { countStrip, DEFAULTS, type CountOptions, type CountResult } from './algorithm/count';
 import { stripGeometry, toGray, type Line, type Point } from './algorithm/profile';
+import { Camera } from './ui/camera';
 import { decodePhoto, makeViewCanvas, straightenStrip } from './ui/capture';
 import { Placement } from './ui/placement';
-import { renderResult } from './ui/result';
+import { renderDetails, renderSummary } from './ui/result';
+import { Tally } from './ui/tally';
 
-type ScreenName = 'capture' | 'place' | 'result';
+// Flow per stack: shutter -> drag first-to-last (count follows the finger)
+// -> "Save & next" adds it to the list and returns to the viewfinder.
+
+type ScreenName = 'camera' | 'place' | 'list';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -14,40 +19,57 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
 };
 
 const screens: Record<ScreenName, HTMLElement> = {
-  capture: $('screen-capture'),
+  camera: $('screen-camera'),
   place: $('screen-place'),
-  result: $('screen-result'),
+  list: $('screen-list'),
 };
 
 const els = {
+  video: $<HTMLVideoElement>('video'),
+  cameraOff: $('camera-off'),
+  cameraOffMsg: $('camera-off-msg'),
+  shutter: $<HTMLButtonElement>('btn-shutter'),
+  torch: $<HTMLButtonElement>('btn-torch'),
+  listOpen: $<HTMLButtonElement>('btn-list'),
+  listBadge: $('list-badge'),
   camera: $<HTMLInputElement>('input-camera'),
   gallery: $<HTMLInputElement>('input-gallery'),
   captureError: $('capture-error'),
   stage: $('stage'),
-  hint: $('place-hint'),
-  placeBack: $<HTMLButtonElement>('btn-place-back'),
-  placeReset: $<HTMLButtonElement>('btn-place-reset'),
-  placeCount: $<HTMLButtonElement>('btn-place-count'),
-  adjust: $<HTMLButtonElement>('btn-adjust'),
-  newPhoto: $<HTMLButtonElement>('btn-new'),
-  recount: $<HTMLButtonElement>('btn-recount'),
+  name: $<HTMLInputElement>('stack-name'),
+  names: $('stack-names'),
+  retake: $<HTMLButtonElement>('btn-retake'),
+  save: $<HTMLButtonElement>('btn-save'),
   invert: $<HTMLInputElement>('set-invert'),
   band: $<HTMLInputElement>('set-band'),
   bandValue: $('set-band-value'),
   devTools: $('dev-tools'),
   devTrue: $<HTMLInputElement>('dev-true'),
   copyAnnotation: $<HTMLButtonElement>('btn-copy-annotation'),
+  savePhoto: $<HTMLButtonElement>('btn-save-photo'),
   annotation: $<HTMLTextAreaElement>('dev-annotation'),
+  listBack: $<HTMLButtonElement>('btn-list-back'),
+  listItems: $('list-items'),
+  listEmpty: $('list-empty'),
+  listTotal: $('list-total'),
+  listCopy: $<HTMLButtonElement>('btn-list-copy'),
+  listShare: $<HTMLButtonElement>('btn-list-share'),
+  listClear: $<HTMLButtonElement>('btn-list-clear'),
   result: {
     count: $('result-count'),
     badge: $('result-badge'),
+    hint: $('place-hint'),
     cross: $('result-cross'),
     warnings: $('result-warnings'),
     strip: $('strip-scroll'),
   },
 };
 
+const camera = new Camera(els.video);
+const tally = new Tally();
+
 const state: {
+  screen: ScreenName;
   bitmap: ImageBitmap | null;
   fileName: string;
   placement: Placement | null;
@@ -55,6 +77,7 @@ const state: {
   settings: Required<Pick<CountOptions, 'invert' | 'bandHalfWidth'>>;
   last: { line: Line; result: CountResult } | null;
 } = {
+  screen: 'camera',
   bitmap: null,
   fileName: '',
   placement: null,
@@ -65,42 +88,116 @@ const state: {
 
 if (new URLSearchParams(location.search).has('dev')) els.devTools.hidden = false;
 
-// ---- Navigation (Android back button steps back through the screens) ----
+// ---- Navigation (Android back button steps back to the viewfinder) ----
 
 function show(name: ScreenName, push = true): void {
+  state.screen = name;
   for (const [k, el] of Object.entries(screens)) el.hidden = k !== name;
   if (push && history.state?.screen !== name) history.pushState({ screen: name }, '');
+  if (name === 'camera') void startCamera();
+  if (name === 'list') renderList();
   window.scrollTo(0, 0);
 }
 
-history.replaceState({ screen: 'capture' }, '');
+history.replaceState({ screen: 'camera' }, '');
 window.addEventListener('popstate', (e) => {
-  const want = (e.state?.screen as ScreenName | undefined) ?? 'capture';
-  if (want !== 'capture' && !state.bitmap) return show('capture', false);
-  if (want === 'result' && !state.last) return show('place', false);
+  const want = (e.state?.screen as ScreenName | undefined) ?? 'camera';
+  if (want === 'place' && !state.bitmap) return show('camera', false);
+  if (want !== 'place') closePhoto();
   show(want, false);
 });
 
-// ---- Screen 1: capture ----
+// ---- Screen 1: viewfinder ----
 
-async function loadFile(file: File): Promise<void> {
-  els.captureError.hidden = true;
-  let bitmap: ImageBitmap;
+async function startCamera(): Promise<void> {
+  if (!Camera.supported()) return cameraUnavailable('The camera needs HTTPS. Use the button below instead.');
+  if (camera.running) return;
   try {
-    bitmap = await decodePhoto(file);
+    await camera.start();
+    els.cameraOff.hidden = true;
+    els.torch.hidden = !camera.hasTorch;
   } catch (err) {
-    els.captureError.textContent = `Could not open that photo (${(err as Error).message || 'unknown error'}).`;
-    els.captureError.hidden = false;
-    return;
+    const name = (err as Error).name;
+    cameraUnavailable(
+      name === 'NotAllowedError'
+        ? 'Camera access was blocked. Allow it in the browser’s site settings, or use the button below.'
+        : `Could not start the camera (${(err as Error).message || name}).`,
+    );
   }
+}
+
+function cameraUnavailable(msg: string): void {
+  els.cameraOffMsg.textContent = msg;
+  els.cameraOff.hidden = false;
+  els.shutter.disabled = true;
+}
+
+// Release the camera when the app is in the background; take it back on return.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) camera.stop();
+  else if (state.screen === 'camera') void startCamera();
+});
+
+els.shutter.addEventListener('click', async () => {
+  try {
+    const bitmap = await camera.grab();
+    openPhoto(bitmap, `stack-${stamp()}.jpg`);
+  } catch (err) {
+    showCaptureError(`Could not take the photo (${(err as Error).message}).`);
+  }
+});
+
+let torchOn = false;
+els.torch.addEventListener('click', async () => {
+  torchOn = !torchOn;
+  try {
+    await camera.setTorch(torchOn);
+  } catch {
+    torchOn = false;
+  }
+  els.torch.setAttribute('aria-pressed', String(torchOn));
+});
+
+for (const input of [els.camera, els.gallery]) {
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      openPhoto(await decodePhoto(file), file.name);
+    } catch (err) {
+      showCaptureError(`Could not open that photo (${(err as Error).message || 'unknown error'}).`);
+    }
+  });
+}
+
+function showCaptureError(msg: string): void {
+  els.captureError.textContent = msg;
+  els.captureError.hidden = false;
+}
+
+function stamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// ---- Screen 2: draw the line, count live ----
+
+function openPhoto(bitmap: ImageBitmap, fileName: string): void {
+  els.captureError.hidden = true;
   closePhoto();
   state.bitmap = bitmap;
-  state.fileName = file.name;
-  state.points = [];
-  state.last = null;
+  state.fileName = fileName;
+  els.name.value = '';
+  els.annotation.hidden = true;
+  renderSummary(els.result, null);
+  els.result.cross.textContent = '';
+  els.result.warnings.replaceChildren();
+  els.result.strip.replaceChildren();
+  els.save.disabled = true;
   show('place');
   state.placement = new Placement(els.stage, bitmap, makeViewCanvas(bitmap), onPointsChange);
-  updatePlaceUi();
 }
 
 function closePhoto(): void {
@@ -108,40 +205,18 @@ function closePhoto(): void {
   state.placement = null;
   state.bitmap?.close();
   state.bitmap = null;
+  state.points = [];
+  state.last = null;
 }
 
-for (const input of [els.camera, els.gallery]) {
-  input.addEventListener('change', () => {
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) void loadFile(file);
-  });
-}
-
-// ---- Screen 2: line placement ----
-
-function onPointsChange(points: Point[]): void {
+// While dragging, count at most once per frame; on release, count and draw the detail.
+let frame = 0;
+function onPointsChange(points: Point[], live: boolean): void {
   state.points = points.map((p) => ({ ...p }));
-  updatePlaceUi();
+  cancelAnimationFrame(frame);
+  if (live) frame = requestAnimationFrame(() => runCount(false));
+  else runCount(true);
 }
-
-function updatePlaceUi(): void {
-  const n = state.points.length;
-  els.hint.textContent =
-    n === 0
-      ? 'Pinch to zoom. Tap the middle of the first item.'
-      : n === 1
-        ? 'Now tap the middle of the last item.'
-        : 'Drag either end to adjust, then Count.';
-  els.placeCount.disabled = n < 2;
-  els.placeReset.disabled = n === 0;
-}
-
-els.placeBack.addEventListener('click', () => history.back());
-els.placeReset.addEventListener('click', () => state.placement?.clear());
-els.placeCount.addEventListener('click', () => runCount());
-
-// ---- Screen 3: result ----
 
 function currentLine(): Line | null {
   if (state.points.length < 2) return null;
@@ -149,39 +224,37 @@ function currentLine(): Line | null {
   return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
 }
 
-function runCount(): void {
+function runCount(details: boolean): void {
   const line = currentLine();
   const bitmap = state.bitmap;
   if (!line || !bitmap) return;
-  els.placeCount.disabled = true;
-  els.placeCount.textContent = 'Counting…';
-  els.recount.disabled = true;
-  // Let the button repaint before the synchronous work.
-  requestAnimationFrame(() =>
-    setTimeout(() => {
-      try {
-        const geom = stripGeometry(line, DEFAULTS.stripHalfHeight);
-        const { canvas, image } = straightenStrip(bitmap, line, geom);
-        const result = countStrip(toGray(image), geom, state.settings);
-        state.last = { line, result };
-        renderResult(els.result, result, canvas);
-        els.annotation.hidden = true;
-        if (screens.result.hidden) show('result');
-      } finally {
-        els.placeCount.textContent = 'Count';
-        els.placeCount.disabled = state.points.length < 2;
-        els.recount.disabled = false;
-      }
-    }, 0),
+  const geom = stripGeometry(line, DEFAULTS.stripHalfHeight);
+  const { canvas, image } = straightenStrip(bitmap, line, geom);
+  const result = countStrip(toGray(image), geom, state.settings);
+  state.last = { line, result };
+
+  renderSummary(els.result, result);
+  // Strip columns -> image points along the line.
+  const L = geom.length || 1;
+  const dx = (line.x2 - line.x1) / L;
+  const dy = (line.y2 - line.y1) / L;
+  state.placement?.setTicks(
+    result.ticks.map((u) => ({ x: line.x1 + (u - geom.margin) * dx, y: line.y1 + (u - geom.margin) * dy })),
   );
+  if (details) {
+    renderDetails(els.result, result, canvas);
+    els.save.disabled = result.count === null;
+  }
 }
 
-els.adjust.addEventListener('click', () => history.back());
-els.newPhoto.addEventListener('click', () => {
-  closePhoto();
-  state.points = [];
-  state.last = null;
-  show('capture');
+els.retake.addEventListener('click', () => history.back());
+
+els.save.addEventListener('click', () => {
+  const r = state.last?.result;
+  if (!r || r.count === null) return;
+  tally.add({ name: els.name.value.trim(), count: r.count, confidence: r.confidence, at: Date.now() });
+  updateListBadge();
+  history.back();
 });
 
 els.band.addEventListener('input', () => {
@@ -189,15 +262,14 @@ els.band.addEventListener('input', () => {
 });
 els.band.addEventListener('change', () => {
   state.settings.bandHalfWidth = Number(els.band.value);
-  runCount();
+  runCount(true);
 });
 els.invert.addEventListener('change', () => {
   state.settings.invert = els.invert.checked;
-  runCount();
+  runCount(true);
 });
-els.recount.addEventListener('click', () => runCount());
 
-// Developer: copy a manifest entry so real use grows the test set.
+// Developer: a manifest entry plus the photo itself, so real use grows the test set.
 els.copyAnnotation.addEventListener('click', async () => {
   if (!state.last) return;
   const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -217,9 +289,106 @@ els.copyAnnotation.addEventListener('click', async () => {
   els.annotation.hidden = false;
   try {
     await navigator.clipboard.writeText(text);
-    els.copyAnnotation.textContent = 'Copied';
-    setTimeout(() => (els.copyAnnotation.textContent = 'Copy annotation JSON'), 1500);
+    flash(els.copyAnnotation, 'Copied');
   } catch {
     els.annotation.select();
   }
 });
+
+els.savePhoto.addEventListener('click', () => {
+  const bitmap = state.bitmap;
+  if (!bitmap) return;
+  const c = document.createElement('canvas');
+  c.width = bitmap.width;
+  c.height = bitmap.height;
+  c.getContext('2d')!.drawImage(bitmap, 0, 0);
+  c.toBlob(
+    (blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = state.fileName.replace(/\.\w+$/, '') + '.jpg';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    },
+    'image/jpeg',
+    0.95,
+  );
+});
+
+function flash(btn: HTMLButtonElement, text: string): void {
+  const before = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => (btn.textContent = before), 1500);
+}
+
+// ---- Screen 3: the list ----
+
+function updateListBadge(): void {
+  els.listBadge.textContent = String(tally.entries.length);
+  els.names.replaceChildren(
+    ...tally.names().map((n) => {
+      const o = document.createElement('option');
+      o.value = n;
+      return o;
+    }),
+  );
+}
+
+function renderList(): void {
+  const empty = tally.entries.length === 0;
+  els.listEmpty.hidden = !empty;
+  els.listTotal.textContent = empty ? '' : `Total ${tally.total} across ${tally.entries.length} stacks`;
+  els.listCopy.disabled = empty;
+  els.listShare.disabled = empty;
+  els.listClear.disabled = empty;
+  els.listItems.replaceChildren(
+    ...tally.entries.map((e, i) => {
+      const li = document.createElement('li');
+      const name = document.createElement('span');
+      name.className = 'li-name';
+      name.textContent = e.name || `Stack ${i + 1}`;
+      const count = document.createElement('span');
+      count.className = `li-count ${e.confidence}`;
+      count.textContent = String(e.count);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'li-del';
+      del.setAttribute('aria-label', `Remove ${name.textContent}`);
+      del.textContent = '×';
+      del.addEventListener('click', () => {
+        tally.remove(i);
+        updateListBadge();
+        renderList();
+      });
+      li.append(name, count, del);
+      return li;
+    }),
+  );
+}
+
+els.listOpen.addEventListener('click', () => show('list'));
+els.listBack.addEventListener('click', () => history.back());
+els.listCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(tally.toText());
+    flash(els.listCopy, 'Copied');
+  } catch {
+    flash(els.listCopy, 'Copy failed');
+  }
+});
+if ('share' in navigator) els.listShare.hidden = false;
+els.listShare.addEventListener('click', () => {
+  navigator.share({ title: 'Stack counts', text: tally.toText() }).catch(() => {});
+});
+els.listClear.addEventListener('click', () => {
+  if (!confirm(`Clear all ${tally.entries.length} counts?`)) return;
+  tally.clear();
+  updateListBadge();
+  renderList();
+});
+
+// ---- Start ----
+
+updateListBadge();
+show('camera', false);

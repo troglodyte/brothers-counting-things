@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo holds
 
-**Stack Counter** is a phone-browser PWA that counts a stack of brochures or magazines from a side-on photo. The user taps the first item, then the last item, and the app reports the count. The target accuracy is `countTolerance(n)` in `src/algorithm/count.ts`: ±1 item up to 29, then 5% (±3 at 60, ±20 at 400). The user chose this on 2026-11-20 because small stacks decide when to reorder, while big stacks only need to be roughly right. The repo is `troglodyte/brothers-counting-things` (public). The app is live at https://troglodyte.github.io/brothers-counting-things/ and redeploys on every push to `main`.
+**Stack Counter** is a phone-browser PWA that counts a stack of brochures or magazines from a side-on photo. The user shoots with the in-app camera, drags from the first item to the last, and the count updates live; "Save & next" adds it to a running list. Speed per stack matters: the user counts many stacks in one go, so avoid adding taps, menus or screens to the main path (user, 2026-11-20). The target accuracy is `countTolerance(n)` in `src/algorithm/count.ts`: ±1 item up to 29, then 5% (±3 at 60, ±20 at 400). The user chose this on 2026-11-20 because small stacks decide when to reorder, while big stacks only need to be roughly right. The repo is `troglodyte/brothers-counting-things` (public). The app is live at https://troglodyte.github.io/brothers-counting-things/ and redeploys on every push to `main`.
 
 - `stack-counter-plan.md` is the design plan, with phases 0 to 4 and a gate for each. Read it before you change the algorithm or add features.
 - `fixtures/` (git-ignored except its README) holds the six real stack photos, `6811.jpg` to `6816.jpg`, and a `manifest.json` with one line per photo. The true counts are the user's: 6811 ≈ 23, 6812 = 20, 6813 = 7, 6814 ≈ 22, 6815 ≈ 60, and 6816 ≈ 60 (6816 is the same stack as 6815). Each line end may be off by about one item. In 6813 only the front (brown) stack is annotated. 6815 and 6816 mix several titles of different thickness in one stack. The originals are also in `images/`, which is git-ignored. Never commit photos.
@@ -55,12 +55,12 @@ If straightening changes in one path, it has to change in the other too, or the 
 
 `signal.ts` contains the shared DSP primitives: box, Gaussian, detrend, normalized autocorrelation, parabolic offset.
 
-**UI.** The UI is vanilla DOM with no framework, by design. `main.ts` connects three screens: capture (`ui/capture.ts`), two-tap line placement with pinch-zoom and a loupe (`ui/placement.ts`, using `@panzoom/panzoom` pinned at 4.6.0), and the result screen (`ui/result.ts`). `vite.config.ts` sets `base: './'` so the same build works on Pages and on the LAN dev server. `vite-plugin-pwa` handles offline use and home-screen install.
+**UI.** The UI is vanilla DOM with no framework, by design. `main.ts` connects three screens: the viewfinder (`ui/camera.ts`, getUserMedia, grabs a video frame; falls back to a file input without HTTPS or camera permission, and `ui/capture.ts` decodes gallery files), line placement (`ui/placement.ts`: one-finger drag draws the line, handles adjust it, two fingers pinch/pan, a loupe, ticks drawn on the photo; its own gesture code because a pan library would steal the one-finger drag) with the live count under it (`ui/result.ts`, details collapsed), and the running list (`ui/tally.ts`, kept in localStorage). The count runs on every animation frame while dragging (about 10 ms). `vite.config.ts` sets `base: './'` so the same build works on Pages and on the LAN dev server. `vite-plugin-pwa` handles offline use and home-screen install.
 
 **Tests.** `test/synth.ts` builds synthetic profiles and synthetic stack photos with known counts, perspective, noise and missing edges. `harness/make-synthetic.ts` uses the same generators to build the CI fixture set.
 
 ## Constraints from the plan
 
-- Deliberately not used: OpenCV.js, TensorFlow.js, getUserMedia live preview, and any UI framework. A learned model is Phase 4 and only applies if the harness shows a class of images the classical method can't handle.
+- Deliberately not used: OpenCV.js, TensorFlow.js, and any UI framework. The plan also ruled out a getUserMedia preview (lower resolution), but the user chose the in-app camera for speed on 2026-11-20; video frames still give 10+ px per item on their thick items. A learned model is Phase 4 and only applies if the harness shows a class of images the classical method can't handle.
 - Any algorithm change must pass `npm run harness`. It is the regression gate.
 - `fixtures/*` is git-ignored except its README. Publish real photos only if the user approves.

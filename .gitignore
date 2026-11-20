@@ -15,3 +15,4 @@ public/icon-*.png
 # archive this repo was first unpacked from.
 images/
 *.zip
+.playwright-mcp/

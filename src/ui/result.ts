@@ -1,5 +1,6 @@
-// Screen 3: the number, a confidence badge, the cross-check, and the
-// straightened strip with detected ticks so misses are visible at a glance.
+// The count under the photo: the number and a confidence badge, updated live
+// while the line is dragged; on release, the cross-check, warnings and the
+// straightened strip with detected ticks (in Details) for debugging.
 
 import type { CountResult } from '../algorithm/count';
 
@@ -12,16 +13,30 @@ const BADGE_TEXT = {
 export interface ResultEls {
   count: HTMLElement;
   badge: HTMLElement;
+  hint: HTMLElement;
   cross: HTMLElement;
   warnings: HTMLElement;
   strip: HTMLElement;
 }
 
-export function renderResult(els: ResultEls, r: CountResult, stripCanvas: HTMLCanvasElement): void {
+/** Cheap enough to run on every animation frame while dragging. */
+export function renderSummary(els: ResultEls, r: CountResult | null): void {
+  if (!r) {
+    els.count.textContent = '–';
+    els.badge.hidden = true;
+    els.hint.textContent = 'Drag from the first item to the last.';
+    return;
+  }
   els.count.textContent = r.count === null ? '?' : String(r.count);
+  els.badge.hidden = false;
   els.badge.className = `badge ${r.confidence}`;
   els.badge.textContent = BADGE_TEXT[r.confidence];
+  els.hint.textContent =
+    r.warnings[0] ?? 'Drag an end to adjust, or drag anew to redo.';
+}
 
+/** On release: the detail that is too slow or too noisy to redraw live. */
+export function renderDetails(els: ResultEls, r: CountResult, stripCanvas: HTMLCanvasElement): void {
   const parts: string[] = [];
   if (r.periodCount !== null) parts.push(`by spacing ${r.periodCount}`);
   if (r.peakCount !== null) parts.push(`by edges ${r.peakCount}`);

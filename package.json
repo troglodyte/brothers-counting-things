@@ -16,9 +16,6 @@
     "intake": "tsx harness/intake.ts",
     "harness": "tsx harness/run.ts"
   },
-  "dependencies": {
-    "@panzoom/panzoom": "4.6.0"
-  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "sharp": "^0.34.1",
