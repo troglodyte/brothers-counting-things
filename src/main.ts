@@ -1,11 +1,14 @@
 import './style.css';
+import { lookHalfWidth, stackLook } from './algorithm/appearance';
 import { countStrip, DEFAULTS, type CountOptions, type CountResult } from './algorithm/count';
 import { stripGeometry, toGray, type Line, type Point } from './algorithm/profile';
 import { Camera } from './ui/camera';
 import { decodePhoto, makeViewCanvas, straightenStrip } from './ui/capture';
 import { Placement } from './ui/placement';
 import { renderDetails, renderSummary } from './ui/result';
+import { closestName, readSpine } from './ui/spine';
 import { Tally } from './ui/tally';
+import { Titles } from './ui/titles';
 
 // Flow per stack: shutter -> drag first-to-last (count follows the finger)
 // -> "Save & next" adds it to the list and returns to the viewfinder.
@@ -38,6 +41,7 @@ const els = {
   stage: $('stage'),
   name: $<HTMLInputElement>('stack-name'),
   names: $('stack-names'),
+  nameNote: $('name-note'),
   retake: $<HTMLButtonElement>('btn-retake'),
   save: $<HTMLButtonElement>('btn-save'),
   invert: $<HTMLInputElement>('set-invert'),
@@ -67,6 +71,7 @@ const els = {
 
 const camera = new Camera(els.video);
 const tally = new Tally();
+const titles = new Titles();
 
 const state: {
   screen: ScreenName;
@@ -76,6 +81,11 @@ const state: {
   points: Point[];
   settings: Required<Pick<CountOptions, 'invert' | 'bandHalfWidth'>>;
   last: { line: Line; result: CountResult } | null;
+  /** Who filled the name box: the user (never overwrite) or a suggestion. */
+  nameSource: 'user' | 'auto' | null;
+  look: Float32Array | null;
+  spineRead: boolean;
+  photoId: number;
 } = {
   screen: 'camera',
   bitmap: null,
@@ -84,6 +94,10 @@ const state: {
   points: [],
   settings: { invert: DEFAULTS.invert, bandHalfWidth: DEFAULTS.bandHalfWidth },
   last: null,
+  nameSource: null,
+  look: null,
+  spineRead: false,
+  photoId: 0,
 };
 
 if (new URLSearchParams(location.search).has('dev')) els.devTools.hidden = false;
@@ -190,6 +204,13 @@ function openPhoto(bitmap: ImageBitmap, fileName: string): void {
   state.bitmap = bitmap;
   state.fileName = fileName;
   els.name.value = '';
+  els.name.placeholder = `Stack ${tally.entries.length + 1}`;
+  setNameNote('');
+  els.name.classList.remove('auto');
+  state.nameSource = null;
+  state.look = null;
+  state.spineRead = false;
+  state.photoId++;
   els.annotation.hidden = true;
   renderSummary(els.result, null);
   els.result.cross.textContent = '';
@@ -244,15 +265,60 @@ function runCount(details: boolean): void {
   if (details) {
     renderDetails(els.result, result, canvas);
     els.save.disabled = result.count === null;
+    if (result.count !== null) suggestName(bitmap, line, result);
   }
 }
+
+// ---- Name: a title seen before (by look), else what the spine says ----
+
+function suggestName(bitmap: ImageBitmap, line: Line, result: CountResult): void {
+  const geom = stripGeometry(line, lookHalfWidth(result.pxPerItem));
+  state.look = stackLook(straightenStrip(bitmap, line, geom).image, geom);
+  if (state.nameSource === 'user') return;
+  const known = state.look && titles.match(state.look);
+  if (known) return setAutoName(known.name, 'Recognised from an earlier stack.');
+  if (state.spineRead) return;
+  state.spineRead = true;
+  const photo = state.photoId;
+  setNameNote('Reading the spine…');
+  readSpine(bitmap, line)
+    .then((text) => {
+      if (photo !== state.photoId || state.nameSource === 'user') return;
+      if (!text) return setNameNote('');
+      const name = closestName(text, [...titles.names(), ...tally.names()]) ?? text;
+      setAutoName(name, 'Read from the spine. Check it.');
+    })
+    .catch(() => {
+      if (photo === state.photoId) setNameNote('');
+    });
+}
+
+function setAutoName(name: string, note: string): void {
+  els.name.value = name;
+  els.name.classList.add('auto');
+  state.nameSource = 'auto';
+  setNameNote(note);
+}
+
+function setNameNote(text: string): void {
+  els.nameNote.textContent = text;
+  els.nameNote.hidden = !text;
+}
+
+els.name.addEventListener('input', () => {
+  state.nameSource = els.name.value ? 'user' : null;
+  els.name.classList.remove('auto');
+  setNameNote('');
+});
 
 els.retake.addEventListener('click', () => history.back());
 
 els.save.addEventListener('click', () => {
   const r = state.last?.result;
   if (!r || r.count === null) return;
-  tally.add({ name: els.name.value.trim(), count: r.count, confidence: r.confidence, at: Date.now() });
+  const name = els.name.value.trim();
+  if (name && state.look) titles.learn(name, state.look);
+  tally.add({ name, count: r.count, confidence: r.confidence, at: Date.now() });
   updateListBadge();
   history.back();
 });
@@ -327,7 +393,7 @@ function flash(btn: HTMLButtonElement, text: string): void {
 function updateListBadge(): void {
   els.listBadge.textContent = String(tally.entries.length);
   els.names.replaceChildren(
-    ...tally.names().map((n) => {
+    ...[...new Set([...tally.names(), ...titles.names()])].map((n) => {
       const o = document.createElement('option');
       o.value = n;
       return o;

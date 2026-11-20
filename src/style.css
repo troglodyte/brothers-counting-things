@@ -303,6 +303,16 @@ h1 {
   color: var(--text);
 }
 
+.name.auto {
+  border-color: var(--accent);
+}
+
+.name-note {
+  margin: -4px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 /* List */
 .list-head {
   display: flex;

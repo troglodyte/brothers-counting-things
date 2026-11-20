@@ -11,7 +11,9 @@ Count a stack of brochures or magazines from a phone photo. Open it in the
 phone browser, point the camera at the side of the stack, press the shutter,
 drag from the first item to the last, and the count follows your finger.
 "Save & next" adds it to a running list (copy or share it when you're done)
-and goes straight back to the camera.
+and goes straight back to the camera. Name a title once and the app
+recognises it by its look next time; for a new title it tries to read the
+spine. Everything runs on the phone.
 
 Free, offline-capable (installs to the home screen as a PWA), MIT licensed.
 Add `?dev` to the URL for the developer tools. Every push to `main` redeploys it.
@@ -39,7 +41,7 @@ The line runs from the **middle of the first item to the middle of the last
 item**, so the count is `length / period + 1`.
 
 Code: [`src/algorithm/`](src/algorithm) (pure functions, identical in the
-browser and in Node), [`src/ui/`](src/ui) (vanilla DOM, no dependencies).
+browser and in Node), [`src/ui/`](src/ui) (vanilla DOM; Tesseract.js, lazy-loaded, for reading spines).
 
 ## Develop
 
