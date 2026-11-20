@@ -2,7 +2,7 @@
 // for the on-screen view, and canvas straightening of the strip under the line.
 
 import type { Line, StripGeometry } from '../algorithm/profile';
-import { stripSize } from '../algorithm/profile';
+import { stripSize, stripTransform } from '../algorithm/profile';
 
 export async function decodePhoto(file: File): Promise<ImageBitmap> {
   try {
@@ -41,21 +41,8 @@ export function straightenStrip(bitmap: ImageBitmap, line: Line, geom: StripGeom
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, width, height);
-  const L = geom.length || 1;
-  const dx = (line.x2 - line.x1) / L;
-  const dy = (line.y2 - line.y1) / L;
-  const nx = -dy;
-  const ny = dx;
-  // Image point p maps to strip pixel (u, v) = (margin + (p - p1).d, halfHeight + (p - p1).n).
-  // Canvas pixel u is centred at u + 0.5, hence the half-pixel shift.
-  ctx.setTransform(
-    dx,
-    nx,
-    dy,
-    ny,
-    geom.margin + 0.5 - (line.x1 * dx + line.y1 * dy),
-    geom.halfHeight + 0.5 - (line.x1 * nx + line.y1 * ny),
-  );
+  // Same sampling grid as profile.extractStrip (the harness path); test/paths.test.ts checks they agree.
+  ctx.setTransform(...stripTransform(line, geom));
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(bitmap, 0, 0);

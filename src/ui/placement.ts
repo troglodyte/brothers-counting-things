@@ -20,6 +20,32 @@ type Mode =
   | { kind: 'draw'; pointer: number; start: Point; startClient: { x: number; y: number }; before: Point[]; moved: boolean }
   | { kind: 'pinch'; mid0: { x: number; y: number }; dist0: number; k0: number; tx0: number; ty0: number };
 
+/** view canvas px -> stage css px: stage = t + k * view; kFit is the whole-photo zoom. */
+export interface ViewState {
+  k: number;
+  kFit: number;
+  tx: number;
+  ty: number;
+}
+
+/** The whole photo, centred in the stage. */
+export function fitView(stageW: number, stageH: number, viewW: number, viewH: number): ViewState {
+  const k = Math.min(stageW / viewW, stageH / viewH);
+  return { k, kFit: k, tx: (stageW - viewW * k) / 2, ty: (stageH - viewH * k) / 2 };
+}
+
+/**
+ * The view after the stage resizes. During a gesture: null, meaning leave the
+ * photo where it is under the finger and call again when the gesture ends.
+ * Otherwise an un-zoomed photo is refitted and a zoomed one stays put.
+ */
+export function viewAfterResize(cur: ViewState, fit: ViewState, gestureActive: boolean): ViewState | null {
+  if (gestureActive) return null;
+  const zoomed = cur.k > cur.kFit * (1 + 1e-9);
+  if (!zoomed || cur.k <= fit.kFit) return fit;
+  return { ...cur, kFit: fit.kFit };
+}
+
 export class Placement {
   points: Point[] = [];
 
@@ -33,6 +59,7 @@ export class Placement {
   private kFit = 1;
   private tx = 0;
   private ty = 0;
+  private resizePending = false;
   private cleanups: (() => void)[] = [];
   private resizeObs: ResizeObserver;
 
@@ -64,7 +91,7 @@ export class Placement {
     listen(window, 'pointercancel', this.onUp);
     listen(stage, 'wheel', this.onWheel, { passive: false });
 
-    this.resizeObs = new ResizeObserver(() => this.fit());
+    this.resizeObs = new ResizeObserver(() => this.onResize());
     this.resizeObs.observe(stage);
     this.fit();
   }
@@ -85,15 +112,49 @@ export class Placement {
   private fit(): void {
     const r = this.stage.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
-    this.kFit = Math.min(r.width / this.view.width, r.height / this.view.height);
-    this.k = this.kFit;
-    this.tx = (r.width - this.view.width * this.k) / 2;
-    this.ty = (r.height - this.view.height * this.k) / 2;
+    this.sizeOverlay(r);
+    this.setView(fitView(r.width, r.height, this.view.width, this.view.height));
+  }
+
+  /**
+   * The stage changes size when the bar below it grows (the first live count
+   * shows the badge). Refitting then would move and rescale the photo under a
+   * finger that is still drawing, so the line's end lands on the wrong item.
+   */
+  private onResize(): void {
+    const r = this.stage.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    this.sizeOverlay(r);
+    const next = viewAfterResize(
+      { k: this.k, kFit: this.kFit, tx: this.tx, ty: this.ty },
+      fitView(r.width, r.height, this.view.width, this.view.height),
+      this.mode.kind !== 'none',
+    );
+    this.resizePending = next === null;
+    if (next) this.setView(next);
+    else this.draw();
+  }
+
+  private endGesture(): void {
+    this.mode = { kind: 'none' };
+    if (this.resizePending) this.onResize();
+  }
+
+  private sizeOverlay(r: DOMRect): void {
     const dpr = window.devicePixelRatio || 1;
-    this.overlay.width = Math.round(r.width * dpr);
-    this.overlay.height = Math.round(r.height * dpr);
+    const w = Math.round(r.width * dpr);
+    const h = Math.round(r.height * dpr);
+    if (this.overlay.width !== w) this.overlay.width = w;
+    if (this.overlay.height !== h) this.overlay.height = h;
     this.overlay.style.width = `${r.width}px`;
     this.overlay.style.height = `${r.height}px`;
+  }
+
+  private setView(v: ViewState): void {
+    this.k = v.k;
+    this.kFit = v.kFit;
+    this.tx = v.tx;
+    this.ty = v.ty;
     this.apply();
   }
 
@@ -236,11 +297,11 @@ export class Placement {
     const m = this.mode;
     if (m.kind === 'pinch') {
       // Lifting one finger of a pinch must not start a line with the other.
-      if (this.pointers.size === 0) this.mode = { kind: 'none' };
+      if (this.pointers.size === 0) this.endGesture();
       return;
     }
     if ((m.kind === 'handle' || m.kind === 'draw') && e.pointerId === m.pointer) {
-      this.mode = { kind: 'none' };
+      this.endGesture();
       this.hideLoupe();
       if (m.kind === 'handle' || m.moved) this.changed(false);
     }

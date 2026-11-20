@@ -13,7 +13,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { countStack } from '../src/algorithm/count';
 import { lineLength } from '../src/algorithm/profile';
-import { decodeGray, loadManifest, tolerance } from './manifest';
+import { decodeImage, loadManifest, tolerance } from './manifest';
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
@@ -60,7 +60,7 @@ interface Row {
 
 const rows: Row[] = [];
 for (const e of entries) {
-  const img = await decodeGray(dir, e.image);
+  const img = await decodeImage(dir, e.image);
   const t0 = performance.now();
   const r = countStack(img, e.line, e.settings ?? {});
   const ms = performance.now() - t0;

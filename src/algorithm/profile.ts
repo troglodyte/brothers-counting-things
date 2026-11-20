@@ -58,6 +58,29 @@ export function stripSize(g: StripGeometry): { width: number; height: number } {
   return { width: Math.ceil(g.length) + 2 * g.margin + 1, height: 2 * g.halfHeight + 1 };
 }
 
+/**
+ * Image -> strip as a canvas `setTransform(a, b, c, d, e, f)` matrix, for the
+ * browser path (`ui/capture.straightenStrip`). Image point p lands on strip
+ * pixel centre (u + 0.5, v + 0.5) where u = margin + (p - p1).d and
+ * v = halfHeight + (p - p1).n: the same sampling grid `extractStrip` uses.
+ * Canvas maps (x, y) to (a x + c y + e, b x + d y + f).
+ */
+export function stripTransform(line: Line, geom: StripGeometry): [number, number, number, number, number, number] {
+  const L = geom.length || 1;
+  const dx = (line.x2 - line.x1) / L;
+  const dy = (line.y2 - line.y1) / L;
+  const nx = -dy;
+  const ny = dx;
+  return [
+    dx,
+    nx,
+    dy,
+    ny,
+    geom.margin + 0.5 - (line.x1 * dx + line.y1 * dy),
+    geom.halfHeight + 0.5 - (line.x1 * nx + line.y1 * ny),
+  ];
+}
+
 function lumaReader(img: ImageLike): (pixelIndex: number) => number {
   const ch = img.channels ?? 4;
   const d = img.data;

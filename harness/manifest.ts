@@ -23,11 +23,15 @@ export function loadManifest(dir: string): ManifestEntry[] {
   return parsed as ManifestEntry[];
 }
 
-/** Decode with EXIF rotation applied, as the browser does with imageOrientation: "from-image". */
-export async function decodeGray(dir: string, image: string): Promise<ImageLike> {
+/**
+ * Decode with EXIF rotation applied, as the browser does with imageOrientation: "from-image".
+ * Keeps the colour channels: the algorithm's own luma (profile.toGray, Rec. 601 on sRGB values)
+ * makes the grey, as in the browser. sharp's greyscale() weighs channels differently and
+ * shifted counts by an item on real photos.
+ */
+export async function decodeImage(dir: string, image: string): Promise<ImageLike> {
   const { data, info } = await sharp(resolve(dir, image), { limitInputPixels: false })
     .rotate()
-    .greyscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
   return { width: info.width, height: info.height, data, channels: info.channels };
