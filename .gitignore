@@ -16,3 +16,4 @@ public/icon-*.png
 images/
 *.zip
 .playwright-mcp/
+.claude/worktrees/

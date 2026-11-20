@@ -44,7 +44,6 @@ const els = {
   nameNote: $('name-note'),
   retake: $<HTMLButtonElement>('btn-retake'),
   save: $<HTMLButtonElement>('btn-save'),
-  invert: $<HTMLInputElement>('set-invert'),
   band: $<HTMLInputElement>('set-band'),
   bandValue: $('set-band-value'),
   devTools: $('dev-tools'),
@@ -79,7 +78,7 @@ const state: {
   fileName: string;
   placement: Placement | null;
   points: Point[];
-  settings: Required<Pick<CountOptions, 'invert' | 'bandHalfWidth'>>;
+  settings: Required<Pick<CountOptions, 'bandHalfWidth'>>;
   last: { line: Line; result: CountResult } | null;
   /** Who filled the name box: the user (never overwrite) or a suggestion. */
   nameSource: 'user' | 'auto' | null;
@@ -92,7 +91,7 @@ const state: {
   fileName: '',
   placement: null,
   points: [],
-  settings: { invert: DEFAULTS.invert, bandHalfWidth: DEFAULTS.bandHalfWidth },
+  settings: { bandHalfWidth: DEFAULTS.bandHalfWidth },
   last: null,
   nameSource: null,
   look: null,
@@ -330,10 +329,6 @@ els.band.addEventListener('change', () => {
   state.settings.bandHalfWidth = Number(els.band.value);
   runCount(true);
 });
-els.invert.addEventListener('change', () => {
-  state.settings.invert = els.invert.checked;
-  runCount(true);
-});
 
 // Developer: a manifest entry plus the photo itself, so real use grows the test set.
 els.copyAnnotation.addEventListener('click', async () => {
@@ -347,7 +342,7 @@ els.copyAnnotation.addEventListener('click', async () => {
     trueCount: Number.isFinite(trueCount) && trueCount > 0 ? trueCount : null,
     notes: `app said ${result.count} (${result.confidence})`,
   };
-  if (state.settings.invert || state.settings.bandHalfWidth !== DEFAULTS.bandHalfWidth) {
+  if (state.settings.bandHalfWidth !== DEFAULTS.bandHalfWidth) {
     entry.settings = { ...state.settings };
   }
   const text = JSON.stringify(entry, null, 2);
