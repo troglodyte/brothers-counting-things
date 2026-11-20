@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#14171c" />
+    <meta name="description" content="Count a stack of brochures or magazines from a photo." />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <title>Stack Counter</title>
+  </head>
+  <body>
+    <!-- Screen 1: capture -->
+    <section id="screen-capture" class="screen">
+      <header class="brand">
+        <h1>Stack Counter</h1>
+        <p class="sub">Brochures and magazines, one stack at a time.</p>
+      </header>
+
+      <div class="capture-actions">
+        <label class="btn btn-primary btn-huge">
+          Take photo
+          <input id="input-camera" type="file" accept="image/*" capture="environment" hidden />
+        </label>
+        <label class="btn btn-secondary">
+          Choose from gallery
+          <input id="input-gallery" type="file" accept="image/*" hidden />
+        </label>
+      </div>
+
+      <ol class="tips">
+        <li><strong>Square-on.</strong> Hold the phone level with the side of the stack, not looking down at it.</li>
+        <li><strong>Fill the frame</strong> along the stack, from the bottom item to the top item.</li>
+        <li><strong>Light from the side</strong>, or turn the flash on, so every edge casts a line.</li>
+      </ol>
+      <p id="capture-error" class="error" hidden></p>
+    </section>
+
+    <!-- Screen 2: place the line -->
+    <section id="screen-place" class="screen" hidden>
+      <div id="stage" class="stage"></div>
+      <div class="place-bar">
+        <p id="place-hint" class="hint">Tap the middle of the first item.</p>
+        <div class="row">
+          <button id="btn-place-back" class="btn btn-secondary" type="button">Back</button>
+          <button id="btn-place-reset" class="btn btn-secondary" type="button">Clear line</button>
+          <button id="btn-place-count" class="btn btn-primary" type="button" disabled>Count</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen 3: result -->
+    <section id="screen-result" class="screen" hidden>
+      <div class="result-head">
+        <div id="result-count" class="big-count">-</div>
+        <div id="result-badge" class="badge">-</div>
+      </div>
+      <p id="result-cross" class="cross"></p>
+      <ul id="result-warnings" class="warnings"></ul>
+
+      <div class="strip-wrap">
+        <div id="strip-scroll" class="strip-scroll"></div>
+        <p class="strip-caption">Each tick is one detected edge. Gaps or doubled ticks show where to look.</p>
+      </div>
+
+      <div class="row">
+        <button id="btn-adjust" class="btn btn-secondary" type="button">Adjust line</button>
+        <button id="btn-new" class="btn btn-primary" type="button">New photo</button>
+      </div>
+
+      <details id="settings" class="settings">
+        <summary>Settings</summary>
+        <label class="check">
+          <input id="set-invert" type="checkbox" />
+          Count dark lines instead of bright ones
+        </label>
+        <label class="range">
+          Band width <span id="set-band-value">6</span> px
+          <input id="set-band" type="range" min="2" max="24" step="1" value="6" />
+        </label>
+        <button id="btn-recount" class="btn btn-secondary" type="button">Recount</button>
+        <div id="dev-tools" class="dev" hidden>
+          <h3>Developer</h3>
+          <label class="range">
+            True count (optional)
+            <input id="dev-true" type="number" inputmode="numeric" min="1" placeholder="hand count" />
+          </label>
+          <button id="btn-copy-annotation" class="btn btn-secondary" type="button">Copy annotation JSON</button>
+          <textarea id="dev-annotation" readonly rows="6" hidden></textarea>
+        </div>
+      </details>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

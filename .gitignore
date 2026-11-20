@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dev-dist/
+*.log
+
+# Real stack photos stay private by default (see README).
+fixtures/*
+!fixtures/README.md
+
+# Generated
+fixtures-synthetic/
+public/icon-*.png

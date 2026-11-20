@@ -1,0 +1,142 @@
+// Combine the period count and the peak cross-check into one answer.
+
+import { countPeaks } from './peaks';
+import { windowedPeriod, type PeriodWindow } from './period';
+import {
+  estimateStripeAngle,
+  extractStrip,
+  sampleProfile,
+  stripGeometry,
+  type Gray,
+  type ImageLike,
+  type Line,
+  type StripGeometry,
+} from './profile';
+
+export interface CountOptions {
+  /** Half-width in pixels of the band averaged along the stripes. */
+  bandHalfWidth?: number;
+  /** Count dark lines instead of bright ones (affects the peak cross-check). */
+  invert?: boolean;
+  /** Target number of periods per window. */
+  periodsPerWindow?: number;
+  /** Half-height of the straightened strip. */
+  stripHalfHeight?: number;
+}
+
+export type Confidence = 'good' | 'check' | 'low';
+
+export interface CountResult {
+  /** The answer, or null when nothing countable was found. */
+  count: number | null;
+  /** Which method produced `count`. */
+  method: 'period' | 'peaks' | 'none';
+  periodCount: number | null;
+  peakCount: number | null;
+  confidence: Confidence;
+  /** 0..1 from the period stage. */
+  score: number;
+  pxPerItem: number | null;
+  /** Measured stripe tilt relative to the line's normal, degrees. */
+  tiltDeg: number;
+  /** Peak positions as strip columns (see StripGeometry). */
+  ticks: number[];
+  windows: PeriodWindow[];
+  warnings: string[];
+  geometry: StripGeometry;
+}
+
+export const DEFAULTS = {
+  bandHalfWidth: 6,
+  invert: false,
+  periodsPerWindow: 25,
+  stripHalfHeight: 32,
+} as const;
+
+/** Count from a full image and a line in its pixel coordinates (Node harness path). */
+export function countStack(img: ImageLike, line: Line, opts: CountOptions = {}): CountResult {
+  const geom = stripGeometry(line, opts.stripHalfHeight ?? DEFAULTS.stripHalfHeight);
+  const strip = extractStrip(img, line, geom);
+  return countStrip(strip, geom, opts);
+}
+
+/** Count from an already straightened strip (browser path: the canvas does the straightening). */
+export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions = {}): CountResult {
+  const band = opts.bandHalfWidth ?? DEFAULTS.bandHalfWidth;
+  const invert = opts.invert ?? DEFAULTS.invert;
+  const warnings: string[] = [];
+  const empty = (msg: string): CountResult => ({
+    count: null,
+    method: 'none',
+    periodCount: null,
+    peakCount: null,
+    confidence: 'low',
+    score: 0,
+    pxPerItem: null,
+    tiltDeg: 0,
+    ticks: [],
+    windows: [],
+    warnings: [msg],
+    geometry: geom,
+  });
+
+  if (geom.length < 10) return empty('The line is too short. Tap the first item, then the last item.');
+
+  const angle = estimateStripeAngle(strip, geom);
+  if (angle.assumed) warnings.push('Could not measure the stripe direction; assumed square to the line.');
+  const ext = geom.margin;
+  const profile = sampleProfile(strip, geom, angle.angle, band, ext);
+  if (invert) for (let i = 0; i < profile.length; i++) profile[i] = -profile[i];
+
+  const per = windowedPeriod(profile, ext, geom.length, {
+    periodsPerWindow: opts.periodsPerWindow ?? DEFAULTS.periodsPerWindow,
+  });
+  if (!per) return empty('No regular stripe pattern found along the line.');
+
+  const peaks = countPeaks(per.detrended, per.periodAt, ext, ext + geom.length);
+  const periodCount = Math.max(1, Math.round(per.count));
+  const peakCount = peaks.count;
+  const pxPerItem = per.meanPeriod;
+
+  const tol = Math.max(3, 0.02 * periodCount);
+  const diff = Math.abs(periodCount - peakCount);
+  let count = periodCount;
+  let method: CountResult['method'] = 'period';
+  let confidence: Confidence;
+
+  // Below ~2 px per item the period stage locks onto twice the period; the
+  // edge count then comes out near double, which is the tell.
+  const ratio = peakCount / periodCount;
+  const lockedOnDouble = pxPerItem < 6 && ratio > 1.7 && ratio < 2.3;
+  if (pxPerItem < 2.5 || lockedOnDouble) {
+    warnings.push('Too far away: items are under 2.5 pixels each. Move closer or photograph in sections.');
+    confidence = 'low';
+  } else if (diff <= tol) {
+    confidence = per.score >= 0.6 ? 'good' : per.score >= 0.35 ? 'check' : 'low';
+  } else {
+    if (pxPerItem > 8) {
+      count = peakCount;
+      method = 'peaks';
+    }
+    warnings.push(`The two methods disagree (${periodCount} by spacing, ${peakCount} by edges).`);
+    confidence = diff <= 2 * tol && per.score >= 0.35 ? 'check' : 'low';
+  }
+  if (per.strongShare < 0.5) warnings.push('Parts of the stack have no clear stripe pattern (blur, glare or shadow?).');
+  if (per.spread > 0.05) warnings.push('Item spacing is uneven along the stack.');
+
+  return {
+    count,
+    method,
+    periodCount,
+    peakCount,
+    confidence,
+    score: per.score,
+    pxPerItem,
+    tiltDeg: (angle.angle * 180) / Math.PI,
+    // Profile index k sits at strip column margin - ext + k = k.
+    ticks: peaks.ticks,
+    windows: per.windows,
+    warnings,
+    geometry: geom,
+  };
+}

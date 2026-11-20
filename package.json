@@ -1,0 +1,31 @@
+{
+  "name": "stack-counter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Count a stack of brochures or magazines from a phone photo.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "icons": "tsx scripts/make-icons.ts",
+    "build": "npm run icons && tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "synth": "tsx harness/make-synthetic.ts",
+    "intake": "tsx harness/intake.ts",
+    "harness": "tsx harness/run.ts"
+  },
+  "dependencies": {
+    "@panzoom/panzoom": "4.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "sharp": "^0.34.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-pwa": "^0.21.1",
+    "vitest": "^3.0.5"
+  }
+}
