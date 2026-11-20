@@ -6,12 +6,16 @@ import { findEnds, guideLine, subLine } from '../algorithm/autoends';
 import { countStrip, DEFAULTS, type CountOptions, type CountResult } from '../algorithm/count';
 import { stripGeometry, toGray, type Line } from '../algorithm/profile';
 import { straightenStrip } from './capture';
+import { Settler, type Settled } from './settle';
 
 export interface AutoCount {
   guide: Line;
   /** First item centre to last item centre, in source pixels. */
   line: Line;
   result: CountResult;
+  /** `result.count` and `result.confidence`, for the Settler. */
+  count: number;
+  confidence: CountResult['confidence'];
 }
 
 /**
@@ -26,7 +30,7 @@ export function autoCount(src: ImageBitmap | HTMLVideoElement, w: number, h: num
   const line = subLine(guide, ends);
   const g2 = stripGeometry(line, DEFAULTS.stripHalfHeight);
   const result = countStrip(toGray(straightenStrip(src, line, g2).image), g2, opts);
-  return result.count === null ? null : { guide, line, result };
+  return result.count === null ? null : { guide, line, result, count: result.count, confidence: result.confidence };
 }
 
 /** Pause between counts. One count takes ~20-40 ms on a phone; this keeps the camera smooth. */
@@ -35,6 +39,7 @@ const INTERVAL_MS = 150;
 export class LiveView {
   private on = false;
   private timer = 0;
+  private settler = new Settler<AutoCount>();
 
   constructor(
     private video: HTMLVideoElement,
@@ -46,6 +51,7 @@ export class LiveView {
   start(): void {
     if (this.on) return;
     this.on = true;
+    this.settler.reset();
     this.overlay.hidden = false;
     this.readout.hidden = false;
     this.tick();
@@ -58,6 +64,11 @@ export class LiveView {
     this.readout.hidden = true;
   }
 
+  /** The count most recent frames agree on (null: no stack under the guide). */
+  settled(): Settled<AutoCount> | null {
+    return this.on ? this.settler.settled() : null;
+  }
+
   private tick = (): void => {
     if (!this.on) return;
     const v = this.video;
@@ -68,12 +79,13 @@ export class LiveView {
       } catch {
         // A frame that cannot be read (stream restarting): skip it.
       }
-      this.draw(guideLine(v.videoWidth, v.videoHeight), found);
+      this.settler.push(found, performance.now());
+      this.draw(guideLine(v.videoWidth, v.videoHeight), this.settler.settled());
     }
     this.timer = window.setTimeout(this.tick, INTERVAL_MS);
   };
 
-  private draw(guide: Line, found: AutoCount | null): void {
+  private draw(guide: Line, found: Settled<AutoCount> | null): void {
     const v = this.video;
     const c = this.overlay;
     const dpr = window.devicePixelRatio || 1;
@@ -111,7 +123,8 @@ export class LiveView {
       this.readout.className = 'live-readout';
       return;
     }
-    const { line, result } = found;
+    // The steadied line, with the ticks of the newest frame that agrees with it.
+    const { line } = found;
     stroke(line, 'rgba(0,0,0,0.7)', 6);
     stroke(line, '#ffcc33', 3);
     // Bars across the line at the two end items, and the ticks between.
@@ -120,15 +133,17 @@ export class LiveView {
     const uy = (line.y2 - line.y1) / L;
     const bar = (x: number, y: number, half: number, colour: string, width: number) =>
       stroke({ x1: x + uy * half, y1: y - ux * half, x2: x - uy * half, y2: y + ux * half }, colour, width);
+    const { line: tl, result } = found.latest;
     const m = result.geometry.margin;
+    const tL = Math.hypot(tl.x2 - tl.x1, tl.y2 - tl.y1) || 1;
     result.ticks.forEach((u, i) => {
-      const t = u - m;
+      const t = ((u - m) / tL) * L;
       bar(line.x1 + t * ux, line.y1 + t * uy, 9 * px, i % 2 ? '#ff4fd8' : '#4fe3ff', 2);
     });
     bar(line.x1, line.y1, 22 * px, '#ffcc33', 4);
     bar(line.x2, line.y2, 22 * px, '#ffcc33', 4);
 
-    this.readout.textContent = String(result.count);
-    this.readout.className = `live-readout ${result.confidence}`;
+    this.readout.textContent = String(found.count);
+    this.readout.className = `live-readout ${found.confidence}${found.steady ? '' : ' settling'}`;
   }
 }

@@ -215,10 +215,13 @@ els.mode.addEventListener('click', () => {
 els.shutter.addEventListener('click', async () => {
   try {
     const bitmap = await camera.grab();
-    // Find the ends again on the frame actually taken; the live one may be a moment old.
+    // A steady live count: open on its line, so the photo matches the number just seen.
+    // Otherwise find the ends again on the frame actually taken.
     // Nothing found: the photo opens without a line, as in Draw line mode.
-    let line: Line | undefined;
-    if (lineMode === 'auto') {
+    const held = lineMode === 'auto' ? live.settled() : null;
+    let line: Line | undefined =
+      held?.steady && bitmap.width === els.video.videoWidth && bitmap.height === els.video.videoHeight ? held.line : undefined;
+    if (lineMode === 'auto' && !line) {
       try {
         line = autoCount(bitmap, bitmap.width, bitmap.height, state.settings)?.line;
       } catch {

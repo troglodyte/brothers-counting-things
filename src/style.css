@@ -146,6 +146,11 @@ h1 {
   display: none;
 }
 
+/* Dimmed until most recent frames agree on the count. */
+.live-readout.settling {
+  color: rgba(255, 255, 255, 0.55);
+}
+
 .live-readout.good {
   border-left-color: var(--good);
 }
