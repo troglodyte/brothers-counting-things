@@ -14,7 +14,7 @@ const DRAG_SLOP = 8; // css px before a touch counts as drawing
 const LOUPE = 150; // css px
 const MAX_ZOOM = 40;
 
-type Mode =
+export type Mode =
   | { kind: 'none' }
   | { kind: 'handle'; index: number; pointer: number }
   | { kind: 'draw'; pointer: number; start: Point; startClient: { x: number; y: number }; before: Point[]; moved: boolean }
@@ -44,6 +44,19 @@ export function viewAfterResize(cur: ViewState, fit: ViewState, gestureActive: b
   const zoomed = cur.k > cur.kFit * (1 + 1e-9);
   if (!zoomed || cur.k <= fit.kFit) return fit;
   return { ...cur, kFit: fit.kFit };
+}
+
+/**
+ * The line to keep when a second finger turns a one-finger gesture into a
+ * pinch, or null if nothing changed. A line being drawn is abandoned (back to
+ * the one before it); a handle being dragged stays where it was moved to.
+ * Either way the caller recounts, or the count shown and saved would be for a
+ * line that is no longer on screen.
+ */
+export function pinchTakeover(mode: Mode, points: Point[]): Point[] | null {
+  if (mode.kind === 'draw') return mode.moved ? mode.before : null;
+  if (mode.kind === 'handle') return points;
+  return null;
 }
 
 export class Placement {
@@ -99,6 +112,9 @@ export class Placement {
   destroy(): void {
     this.resizeObs.disconnect();
     for (const c of this.cleanups) c();
+    // Let go of the photo-sized canvas now rather than at the next photo.
+    this.stage.replaceChildren();
+    this.view.width = this.view.height = 0;
   }
 
   /** Tick marks (image coordinates) drawn across the line, one per detected item. */
@@ -216,10 +232,12 @@ export class Placement {
     e.preventDefault();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
-      // Second finger: abandon any line in progress and pinch instead.
-      if (this.mode.kind === 'draw') {
-        this.points = this.mode.before;
-        this.draw();
+      // Second finger: end the one-finger gesture and pinch instead. The count
+      // must then be redone for whatever line is left on screen.
+      const settle = pinchTakeover(this.mode, this.points);
+      if (settle) {
+        this.points = settle;
+        this.changed(false);
       }
       this.hideLoupe();
       const [a, b] = [...this.pointers.values()];

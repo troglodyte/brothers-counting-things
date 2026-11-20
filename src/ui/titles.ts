@@ -2,9 +2,9 @@
 // so the next photo of the same title gets its name filled in. Kept apart from
 // the counted list: clearing the list must not forget the titles.
 
-import { lookSimilarity } from '../algorithm/appearance';
+import { LOOK_SIZE, lookSimilarity } from '../algorithm/appearance';
 
-interface Title {
+export interface Title {
   name: string;
   looks: number[][];
 }
@@ -16,13 +16,31 @@ const MATCH_AT = 0.85;
 /** The runner-up title must be clearly worse, or it's a guess. */
 const MARGIN = 0.08;
 
+const isLook = (l: unknown): l is number[] =>
+  Array.isArray(l) && l.length === LOOK_SIZE && l.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0);
+
+/**
+ * Saved titles that still make sense. A damaged look is dropped: one NaN
+ * would score NaN, which passes no comparison and would match every stack.
+ */
+export function parseTitles(raw: unknown): Title[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((t): Title[] => {
+    if (typeof t !== 'object' || t === null) return [];
+    const { name, looks } = t as Record<string, unknown>;
+    if (typeof name !== 'string' || !name.trim() || !Array.isArray(looks)) return [];
+    const good = looks.filter(isLook).slice(-LOOKS_PER_TITLE);
+    return good.length ? [{ name, looks: good }] : [];
+  });
+}
+
 export class Titles {
   private titles: Title[] = [];
 
   constructor() {
     try {
       const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? '[]');
-      if (Array.isArray(parsed)) this.titles = parsed as Title[];
+      this.titles = parseTitles(parsed);
     } catch {
       this.titles = [];
     }
@@ -34,6 +52,7 @@ export class Titles {
 
   /** The title this look belongs to, or null if none is a confident match. */
   match(look: Float32Array): { name: string; score: number } | null {
+    if (look.length !== LOOK_SIZE || !look.every(Number.isFinite)) return null;
     const scored = this.titles
       .map((t) => ({ name: t.name, score: Math.max(0, ...t.looks.map((l) => lookSimilarity(look, l))) }))
       .sort((a, b) => b.score - a.score);

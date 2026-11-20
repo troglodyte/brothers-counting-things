@@ -44,7 +44,8 @@ export function straightenStrip(bitmap: ImageBitmap, line: Line, geom: StripGeom
   // Same sampling grid as profile.extractStrip (the harness path); test/paths.test.ts checks they agree.
   ctx.setTransform(...stripTransform(line, geom));
   ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
+  // 'low' is plain bilinear, like extractStrip; 'high' may filter differently.
+  ctx.imageSmoothingQuality = 'low';
   ctx.drawImage(bitmap, 0, 0);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   return { canvas, image: ctx.getImageData(0, 0, width, height) };

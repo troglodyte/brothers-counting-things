@@ -1,11 +1,12 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { createHash } from 'node:crypto';
 import { createReadStream, readFileSync } from 'node:fs';
 import type { Plugin } from 'vite';
 
 // Spine reading (src/ui/spine.ts) loads Tesseract's worker, core and English
-// model from ./tesseract/ rather than a CDN, so it works offline and sends
+// model from ./tesseract-<hash>/ rather than a CDN, so it works offline and sends
 // nothing anywhere. Served from node_modules in dev, copied into dist/ on build.
 const OCR_FILES: Record<string, string> = {
   'worker.min.js': 'node_modules/tesseract.js/dist/worker.min.js',
@@ -15,12 +16,20 @@ const OCR_FILES: Record<string, string> = {
   'eng.traineddata.gz': 'ocr/eng.traineddata.gz',
 };
 
+// The directory is named after a hash of the files, so the runtime cache
+// (CacheFirst, below) never serves an old worker with a new core or model.
+const OCR_DIR = (() => {
+  const h = createHash('sha256');
+  for (const src of Object.values(OCR_FILES)) h.update(readFileSync(src));
+  return `tesseract-${h.digest('hex').slice(0, 10)}`;
+})();
+
 function ocrAssets(): Plugin {
   return {
     name: 'ocr-assets',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const m = req.url?.match(/\/tesseract\/([^?]+)/);
+        const m = req.url?.match(new RegExp(`/${OCR_DIR}/([^?]+)`));
         const src = m && OCR_FILES[m[1]];
         if (!src) return next();
         res.setHeader('Content-Type', src.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
@@ -29,7 +38,7 @@ function ocrAssets(): Plugin {
     },
     generateBundle() {
       for (const [name, src] of Object.entries(OCR_FILES)) {
-        this.emitFile({ type: 'asset', fileName: `tesseract/${name}`, source: readFileSync(src) });
+        this.emitFile({ type: 'asset', fileName: `${OCR_DIR}/${name}`, source: readFileSync(src) });
       }
     },
   };
@@ -38,6 +47,7 @@ function ocrAssets(): Plugin {
 export default defineConfig({
   // Relative base works both at user.github.io/stack-counter/ and on a LAN dev server.
   base: './',
+  define: { __OCR_DIR__: JSON.stringify(OCR_DIR) },
   plugins: [
     ocrAssets(),
     VitePWA({
@@ -64,10 +74,10 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
         // OCR files are big and only needed for unrecognised stacks: cache on first use.
-        globIgnores: ['tesseract/**'],
+        globIgnores: ['tesseract-*/**'],
         runtimeCaching: [
           {
-            urlPattern: /\/tesseract\//,
+            urlPattern: /\/tesseract-[0-9a-f]+\//,
             handler: 'CacheFirst',
             options: { cacheName: 'ocr', expiration: { maxEntries: 8 } },
           },

@@ -12,6 +12,25 @@ export interface TallyEntry {
 }
 
 const KEY = 'stack-counter.tally.v1';
+const CONFIDENCES: readonly string[] = ['good', 'check', 'low'];
+
+/** Saved entries that still make sense; anything damaged is dropped, not trusted. */
+export function parseEntries(raw: unknown): TallyEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((e): TallyEntry[] => {
+    if (typeof e !== 'object' || e === null) return [];
+    const { name, count, confidence, at } = e as Record<string, unknown>;
+    if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) return [];
+    return [
+      {
+        name: typeof name === 'string' ? name : '',
+        count,
+        confidence: typeof confidence === 'string' && CONFIDENCES.includes(confidence) ? (confidence as Confidence) : 'low',
+        at: typeof at === 'number' && Number.isFinite(at) ? at : 0,
+      },
+    ];
+  });
+}
 
 export class Tally {
   entries: TallyEntry[] = [];
@@ -20,7 +39,7 @@ export class Tally {
     try {
       const raw = localStorage.getItem(KEY);
       const parsed: unknown = raw ? JSON.parse(raw) : [];
-      if (Array.isArray(parsed)) this.entries = parsed as TallyEntry[];
+      this.entries = parseEntries(parsed);
     } catch {
       this.entries = [];
     }

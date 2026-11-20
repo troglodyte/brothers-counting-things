@@ -80,11 +80,13 @@ const state: {
   points: Point[];
   settings: Required<Pick<CountOptions, 'bandHalfWidth'>>;
   last: { line: Line; result: CountResult } | null;
-  /** Who filled the name box: the user (never overwrite) or a suggestion. */
-  nameSource: 'user' | 'auto' | null;
+  /** Who filled the name box: the user (never overwrite), a look match, or the spine. */
+  nameSource: 'user' | 'look' | 'spine' | null;
   look: Float32Array | null;
   spineRead: boolean;
   photoId: number;
+  /** Save or Retake was tapped and the screen is on its way out: ignore further taps. */
+  leaving: boolean;
 } = {
   screen: 'camera',
   bitmap: null,
@@ -97,6 +99,7 @@ const state: {
   look: null,
   spineRead: false,
   photoId: 0,
+  leaving: false,
 };
 
 if (new URLSearchParams(location.search).has('dev')) els.devTools.hidden = false;
@@ -108,6 +111,8 @@ function show(name: ScreenName, push = true): void {
   for (const [k, el] of Object.entries(screens)) el.hidden = k !== name;
   if (push && history.state?.screen !== name) history.pushState({ screen: name }, '');
   if (name === 'camera') void startCamera();
+  // Stay live behind the photo screen so "Save & next" is instant; the list can wait.
+  if (name === 'list') camera.stop();
   if (name === 'list') renderList();
   window.scrollTo(0, 0);
 }
@@ -127,8 +132,11 @@ async function startCamera(): Promise<void> {
   if (camera.running) return;
   try {
     await camera.start();
+    if (!camera.running) return; // stopped while starting (app went to the background)
     els.cameraOff.hidden = true;
+    els.shutter.disabled = false;
     els.torch.hidden = !camera.hasTorch;
+    setTorchState(false); // a fresh stream starts with the light off
   } catch (err) {
     const name = (err as Error).name;
     cameraUnavailable(
@@ -161,14 +169,18 @@ els.shutter.addEventListener('click', async () => {
 });
 
 let torchOn = false;
+function setTorchState(on: boolean): void {
+  torchOn = on;
+  els.torch.setAttribute('aria-pressed', String(on));
+}
 els.torch.addEventListener('click', async () => {
-  torchOn = !torchOn;
+  const want = !torchOn;
   try {
-    await camera.setTorch(torchOn);
+    await camera.setTorch(want);
+    setTorchState(want);
   } catch {
-    torchOn = false;
+    setTorchState(false);
   }
-  els.torch.setAttribute('aria-pressed', String(torchOn));
 });
 
 for (const input of [els.camera, els.gallery]) {
@@ -210,6 +222,7 @@ function openPhoto(bitmap: ImageBitmap, fileName: string): void {
   state.look = null;
   state.spineRead = false;
   state.photoId++;
+  state.leaving = false;
   els.annotation.hidden = true;
   renderSummary(els.result, null);
   els.result.cross.textContent = '';
@@ -247,7 +260,15 @@ function currentLine(): Line | null {
 function runCount(details: boolean): void {
   const line = currentLine();
   const bitmap = state.bitmap;
-  if (!line || !bitmap) return;
+  if (!bitmap) return;
+  if (!line) {
+    // The line was abandoned (a pinch took over before there was one): nothing to save.
+    state.last = null;
+    renderSummary(els.result, null);
+    state.placement?.setTicks([]);
+    els.save.disabled = true;
+    return;
+  }
   const geom = stripGeometry(line, DEFAULTS.stripHalfHeight);
   const { canvas, image } = straightenStrip(bitmap, line, geom);
   const result = countStrip(toGray(image), geom, state.settings);
@@ -263,8 +284,9 @@ function runCount(details: boolean): void {
   );
   if (details) {
     renderDetails(els.result, result, canvas);
-    els.save.disabled = result.count === null;
-    if (result.count !== null) suggestName(bitmap, line, result);
+    const usable = result.count !== null && result.count > 0;
+    els.save.disabled = !usable;
+    if (usable) suggestName(bitmap, line, result);
   }
 }
 
@@ -275,27 +297,28 @@ function suggestName(bitmap: ImageBitmap, line: Line, result: CountResult): void
   state.look = stackLook(straightenStrip(bitmap, line, geom).image, geom);
   if (state.nameSource === 'user') return;
   const known = state.look && titles.match(state.look);
-  if (known) return setAutoName(known.name, 'Recognised from an earlier stack.');
+  if (known) return setAutoName(known.name, 'look', 'Recognised from an earlier stack.');
   if (state.spineRead) return;
   state.spineRead = true;
   const photo = state.photoId;
   setNameNote('Reading the spine…');
   readSpine(bitmap, line)
     .then((text) => {
-      if (photo !== state.photoId || state.nameSource === 'user') return;
+      // A redrawn line may have matched a known title by look meanwhile; that wins.
+      if (photo !== state.photoId || state.nameSource !== null) return;
       if (!text) return setNameNote('');
       const name = closestName(text, [...titles.names(), ...tally.names()]) ?? text;
-      setAutoName(name, 'Read from the spine. Check it.');
+      setAutoName(name, 'spine', 'Read from the spine. Check it.');
     })
     .catch(() => {
-      if (photo === state.photoId) setNameNote('');
+      if (photo === state.photoId && state.nameSource === null) setNameNote('');
     });
 }
 
-function setAutoName(name: string, note: string): void {
+function setAutoName(name: string, source: 'look' | 'spine', note: string): void {
   els.name.value = name;
   els.name.classList.add('auto');
-  state.nameSource = 'auto';
+  state.nameSource = source;
   setNameNote(note);
 }
 
@@ -310,16 +333,23 @@ els.name.addEventListener('input', () => {
   setNameNote('');
 });
 
-els.retake.addEventListener('click', () => history.back());
+/** Back to the viewfinder, once: a double tap must not step back twice and leave the app. */
+function leavePhoto(): void {
+  if (state.leaving || state.screen !== 'place') return;
+  state.leaving = true;
+  history.back();
+}
+
+els.retake.addEventListener('click', leavePhoto);
 
 els.save.addEventListener('click', () => {
   const r = state.last?.result;
-  if (!r || r.count === null) return;
+  if (state.leaving || !r || r.count === null || r.count < 1) return;
   const name = els.name.value.trim();
   if (name && state.look) titles.learn(name, state.look);
   tally.add({ name, count: r.count, confidence: r.confidence, at: Date.now() });
   updateListBadge();
-  history.back();
+  leavePhoto();
 });
 
 els.band.addEventListener('input', () => {

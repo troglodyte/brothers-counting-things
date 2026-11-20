@@ -1,6 +1,6 @@
 // Read the title off the spines with Tesseract (on the phone, no network once
 // cached). Only used when the look doesn't match a known title. The OCR files
-// (~6 MB) are self-hosted under ./tesseract/ and fetched on first use.
+// (~6 MB) are self-hosted under ./tesseract-<hash>/ (see vite.config.ts) and fetched on first use.
 //
 // Every item in a single-title stack repeats the title, so the reading that
 // recurs across rows wins; one-off fragments and spine junk lose.
@@ -28,12 +28,15 @@ let worker: Promise<Worker> | null = null;
 function getWorker(): Promise<Worker> {
   worker ??= (async () => {
     const T = await import('tesseract.js');
-    const base = new URL('tesseract', document.baseURI).href;
+    const base = new URL(__OCR_DIR__, document.baseURI).href;
     const w = await T.createWorker('eng', T.OEM.LSTM_ONLY, {
       workerPath: `${base}/worker.min.js`,
       corePath: base,
       langPath: base,
       gzip: true,
+      // The service worker already caches the model; Tesseract's own IndexedDB copy
+      // would be a second 2 MB and is keyed without the version.
+      cacheMethod: 'none',
     });
     await w.setParameters({ tessedit_pageseg_mode: T.PSM.SPARSE_TEXT });
     return w as unknown as Worker;
