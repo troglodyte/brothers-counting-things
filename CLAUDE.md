@@ -28,6 +28,7 @@ npm run harness -- fixtures            # accuracy gate on the real photos
 # harness flags: --min-share 0.9, --if-present, --json out.json
 npx tsx harness/robust.ts              # robustness: lines shifted ±75/±150 px, bands 4/6/10 (want 90/90, 0 wrong good)
 npx tsx harness/autoends.ts [-v]       # live mode's end finder: lines 15/30/50% too long (14/18, 0 wrong good on 2026-11-20)
+npx tsx harness/far.ts [-v]            # distant shots: photos shrunk 1/1..1/16 (37/48, 1 wrong check on 2026-11-20; staggered 6815/6816 fail from 1/6)
 ```
 
 Add `?dev` to the app URL to show Details → Developer, with a true-count box, "Copy annotation JSON" (produces `manifest.json` entries for the harness) and "Save photo". On the LAN dev server there is no HTTPS, so the in-app camera falls back to the phone's camera app. The manifest format is in `fixtures/README.md`: each entry has `image`, `line {x1,y1,x2,y2}` in full-resolution pixels after EXIF rotation, `trueCount` (or `null`), and optional `settings`.
