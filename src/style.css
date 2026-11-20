@@ -510,3 +510,34 @@ h1 {
 .screen > .btn {
   flex: 0 0 auto;
 }
+
+/*
+ * Keep the bar under the photo a fixed height while counting: if it grows
+ * (badge appears, a longer hint, the name note), the photo refits and jumps.
+ * Hidden pieces keep their space instead of collapsing.
+ */
+.live {
+  height: 80px;
+}
+
+.live .badge[hidden],
+.place-bar .name-note[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+.live .hint {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.place-bar .name-note {
+  height: 1.2em;
+  line-height: 1.2em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
