@@ -46,6 +46,16 @@ export interface CountResult {
   geometry: StripGeometry;
 }
 
+/**
+ * How far off a count of about `n` items may be: within 1 item up to 29,
+ * then 5 percent (3 at 60, 20 at 400). Small stacks decide when to reorder,
+ * so they need to be near exact; big stacks only need to be roughly right.
+ * Used both for the accuracy gate and for "the two methods agree".
+ */
+export function countTolerance(n: number): number {
+  return Math.max(1, Math.round(0.05 * n));
+}
+
 export const DEFAULTS = {
   bandHalfWidth: 6,
   invert: false,
@@ -98,7 +108,7 @@ export function countStrip(strip: Gray, geom: StripGeometry, opts: CountOptions 
   const peakCount = peaks.count;
   const pxPerItem = per.meanPeriod;
 
-  const tol = Math.max(3, 0.02 * periodCount);
+  const tol = countTolerance(periodCount);
   const diff = Math.abs(periodCount - peakCount);
   let count = periodCount;
   let method: CountResult['method'] = 'period';

@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo holds
 
-**Stack Counter** is a phone-browser PWA that counts a stack of brochures or magazines from a side-on photo. The user taps the first item, then the last item, and the app reports the count. The target accuracy is max(5, 2%) of the true count. The repo is `troglodyte/brothers-counting-things` (private).
+**Stack Counter** is a phone-browser PWA that counts a stack of brochures or magazines from a side-on photo. The user taps the first item, then the last item, and the app reports the count. The target accuracy is `countTolerance(n)` in `src/algorithm/count.ts`: ±1 item up to 29, then 5% (±3 at 60, ±20 at 400). The user chose this on 2026-11-20 because small stacks decide when to reorder, while big stacks only need to be roughly right. The repo is `troglodyte/brothers-counting-things` (private).
 
 - `stack-counter-plan.md` is the design plan, with phases 0 to 4 and a gate for each. Read it before you change the algorithm or add features.
 - `fixtures/` (git-ignored except its README) holds the six real stack photos, `6811.jpg` to `6816.jpg`, and a `manifest.json` with one line per photo. The true counts are the user's: 6811 ≈ 23, 6812 = 20, 6813 = 7, 6814 ≈ 22, 6815 ≈ 60, and 6816 ≈ 60 (6816 is the same stack as 6815). Each line end may be off by about one item. In 6813 only the front (brown) stack is annotated. 6815 and 6816 mix several titles of different thickness in one stack. The originals are also in `images/`, which is git-ignored. Never commit photos.
-- **These photos are the real use case** (confirmed by the user on 2026-11-20). The stacks hold 7 to 60 thick books, magazines or brochures, shot at an angle, at 31 to 237 px per item, and some mix titles. The plan assumed hundreds of thin, single-title items shot square-on, so its thin-item concerns matter less than oblique views, perspective and mixed thicknesses. On these stacks the tolerance max(5, 2%) always works out to ±5, which is very loose. 6811 passes at +4 out of 23.
-- Results on 2026-11-20: 6/6 within tolerance, errors of +4, 0, 0, +2, −3 and −1. Thick items over-count (6811, 6814), and 6814 does so at *good* confidence.
+- **These photos are the real use case** (confirmed by the user on 2026-11-20). The stacks hold 7 to 60 thick books, magazines or brochures, shot at an angle, at 31 to 237 px per item, and some mix titles. The plan assumed hundreds of thin, single-title items shot square-on, so its thin-item concerns matter less than oblique views, perspective and mixed thicknesses.
+- Results under the new tolerance (2026-11-20): 4/6 pass, which fails the gate. Errors are +2, +2, 0, −1, −3 and −1, and no *good* result is wrong. Above 8 px per item, a disagreement makes `count.ts` switch to the edge count. That fixes the thick-item over-count of the spacing method on 6811 and 6814, but breaks 6812 (spacing 20 is exact, edges 22). Neither method is reliable yet on thick items.
 
 ## Commands
 
@@ -49,7 +49,7 @@ If straightening changes in one path, it has to change in the other too, or the 
 2. `period.ts` (windowed period, the answer) estimates a coarse global period by autocorrelation. It then uses overlapping windows of about 25 periods each: detrend, autocorrelate, refine to sub-pixel with a parabola. Weak windows take their period from neighbouring windows. The count is the integral of 1/period, **plus 1**, because the line runs from the middle of the first item to the middle of the last item.
 3. `peaks.ts` (cross-check) counts peaks by local prominence and supplies the tick marks drawn on the result strip.
 4. `count.ts` decides the answer:
-   - If the two counts agree within max(3, 2%), it reports the period count.
+   - If the two counts agree within `countTolerance`, it reports the period count.
    - If they disagree, items thicker than 8 px use the peak count and thinner items keep the period count. Confidence drops to *check* or *low*.
    - Under 2.5 px per item, or when the peak count is about 2× the period count (the period locked onto double), it reports "too far away".
 

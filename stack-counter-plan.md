@@ -12,8 +12,9 @@ Requirements the user confirmed:
 
 - Brochures and magazines only. One title per stack, neatly squared.
 - One stack at a time; the output is a number. No tally or history needed.
-- Accuracy and ease of use over everything else. Being 5 to 20 off on a stack
-  is acceptable (roughly 1 to 2 percent).
+- Accuracy and ease of use over everything else. Tolerance scales with size
+  (revised 2026-11-20): within 1 item up to 29, then 5 percent. Small stacks
+  decide when to reorder; a 400+ stack only needs to be roughly right.
 - Opened from the phone browser. Hosted as a new GitHub repo on GitHub Pages.
 - The user can supply many real images, most with a known true count.
 
@@ -112,7 +113,7 @@ Input: full-resolution bitmap, a line from the first item to the last item
 4. **Peak cross-check.** On the detrended profile, pick peaks with prominence
    above k times the local standard deviation and minimum spacing of 0.5 times
    the local period. Count them. Also produce the tick positions for display.
-5. **Decision.** If the two counts agree within max(3, 2 percent), report the
+5. **Decision.** If the two counts agree within the count tolerance, report the
    period count with high confidence. If not: on coarse periods (more than 8 px
    per item, i.e. magazines) prefer the peak count; on fine periods prefer the
    period count; always show both and the warning. Items per pixel below about
@@ -159,7 +160,7 @@ the sections mode is in scope.
   useless).
 
 Gate: at least 90 percent of fixtures within the user's tolerance
-(max(5, 2 percent)), and no high-confidence result outside it. If a class of
+(see Context: ±1 up to 29 items, then 5 percent), and no high-confidence result outside it. If a class of
 images fails, Phase 0's notes say why (lighting, side, distance) and that
 feeds the capture tips in Phase 2 before anyone reaches for a model.
 

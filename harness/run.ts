@@ -147,7 +147,7 @@ function pearson(a: number[], b: number[]): number {
 const spearman = pearson(ranks(rows.map((r) => r.score)), ranks(relErr));
 
 console.log('');
-console.log(`within tolerance max(5, 2%): ${okCount}/${rows.length} (${(share * 100).toFixed(1)}%), gate ${(minShare * 100).toFixed(0)}%`);
+console.log(`within tolerance (±1 up to 29, then 5%): ${okCount}/${rows.length} (${(share * 100).toFixed(1)}%), gate ${(minShare * 100).toFixed(0)}%`);
 console.log(`abs error: median ${q(0.5)}, 90th pct ${q(0.9)}, max ${absErr.at(-1) ?? '-'}`);
 for (const c of ['good', 'check', 'low']) {
   const g = rows.filter((r) => r.confidence === c);

@@ -33,6 +33,4 @@ export async function decodeGray(dir: string, image: string): Promise<ImageLike>
   return { width: info.width, height: info.height, data, channels: info.channels };
 }
 
-export function tolerance(trueCount: number): number {
-  return Math.max(5, 0.02 * trueCount);
-}
+export { countTolerance as tolerance } from '../src/algorithm/count';

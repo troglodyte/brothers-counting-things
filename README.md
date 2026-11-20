@@ -21,7 +21,7 @@ profile, and then:
 2. **Edge count (cross-check).** Counts prominent stripe peaks. Exact on
    thick magazines; its ticks are drawn on the result strip so misses are
    visible.
-3. **Decision.** If both agree within max(3, 2%), the period count is
+3. **Decision.** If both agree within the count tolerance (±1 up to 29 items, then 5%), the period count is
    reported. If not, thick items (> 8 px each) trust the edge count, thin
    items trust the period count, and the badge drops to *Check* or *Low*.
 
@@ -57,7 +57,7 @@ npm run harness -- fixtures          # Phase 1 gate on your real photos
 The harness decodes each photo with `sharp` (EXIF rotation applied, same as
 the browser), runs the same `countStack()` and prints the error per image,
 the error distribution and how confidence relates to error. It exits
-non-zero if fewer than 90% of images are within max(5, 2%) of the true count,
+non-zero if fewer than 90% of images are within that tolerance of the true count,
 or if any *Good*-confidence result is outside it.
 
 Real photos live in `fixtures/`, which is git-ignored except for its README;
