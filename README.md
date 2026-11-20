@@ -4,6 +4,10 @@ Count a stack of brochures or magazines from a phone photo. Open it in the
 phone browser, take a photo of the side of the stack, tap the first item, tap
 the last item, read the number.
 
+**Use it:** <https://troglodyte.github.io/brothers-counting-things/>
+(add `?dev` to the URL for the developer tools). Every push to `main`
+redeploys it.
+
 Free, offline-capable (installs to the home screen as a PWA), MIT licensed.
 
 ## How it counts
