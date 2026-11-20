@@ -3,7 +3,7 @@ import { countStack } from '../src/algorithm/count';
 import { countPeaks } from '../src/algorithm/peaks';
 import { estimateGlobalPeriod, windowedPeriod } from '../src/algorithm/period';
 import { detrend, parabolicOffset } from '../src/algorithm/signal';
-import { synthProfile, synthStack } from './synth';
+import { rng, synthProfile, synthStack } from './synth';
 
 const within = (got: number, want: number, rel: number) => Math.abs(got - want) <= Math.max(1, rel * want);
 
@@ -120,12 +120,11 @@ describe('countStack on synthetic photos (within 1 percent)', () => {
   it('flags a featureless region instead of inventing a number', () => {
     const W = 200;
     const H = 600;
-    const data = new Uint8ClampedArray(W * H).fill(128);
-    let s = 1;
-    for (let i = 0; i < data.length; i++) {
-      s = (s * 1103515245 + 12345) >>> 0;
-      data[i] = 128 + ((s >>> 16) % 7) - 3;
-    }
+    // Not a bare LCG: a 13-px band of `(s * 1103515245 + 12345) >>> 16` noise
+    // autocorrelates at 0.88 with lag 44 rows, which is a real period.
+    const rand = rng(5);
+    const data = new Uint8ClampedArray(W * H);
+    for (let i = 0; i < data.length; i++) data[i] = 128 + Math.floor(rand() * 7) - 3;
     const r = countStack({ width: W, height: H, data, channels: 1 }, { x1: 100, y1: 50, x2: 100, y2: 550 });
     expect(r.confidence).not.toBe('good');
   });

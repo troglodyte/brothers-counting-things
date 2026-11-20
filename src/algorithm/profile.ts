@@ -199,7 +199,9 @@ export function sampleProfile(
   angle: number,
   bandHalfWidth: number,
   ext: number,
-  sigma = 1,
+  // 0.5 px, not 1: at 3.5 px per item a sigma of 1 keeps only ~20% of the
+  // stripe fundamental and the period is lost. The band average does the denoising.
+  sigma = 0.5,
 ): Float32Array {
   const band = Math.max(0, Math.min(Math.round(bandHalfWidth), geom.halfHeight - 1));
   const n = Math.floor(geom.length + 2 * ext) + 1;
