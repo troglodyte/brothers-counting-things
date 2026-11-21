@@ -148,7 +148,11 @@ function measureWindows(
   opts: PeriodOptions,
 ): PeriodResult {
   const periodsPerWindow = opts.periodsPerWindow ?? 25;
-  const strongThreshold = opts.strongThreshold ?? 0.35;
+  // A window is "strong" (trusted with its own period) from 0.25. In a
+  // staggered stack, windows across spine and page groups measure the right
+  // period at only 0.28-0.29 (photo 6816); at the old 0.35 they borrowed
+  // their neighbours' shorter period and the stack counted 65 of 60.
+  const strongThreshold = opts.strongThreshold ?? 0.25;
   const coreEnd = Math.min(profile.length, coreStart + Math.floor(coreLength) + 1);
   const n = coreEnd - coreStart;
   const P0 = g.period;

@@ -87,6 +87,46 @@ export function synthProfile(o: ProfileOptions): { profile: Float32Array; ext: n
   return { profile: out, ext, coreLength };
 }
 
+/**
+ * A 1-D profile made of sections, each with its own item spacing and gap
+ * depth (e.g. a middle stretch of a staggered stack whose gaps are fainter
+ * and whose items look thicker). Item 0's centre is at index `ext`.
+ */
+export function synthSections(
+  sections: { count: number; period: number; depth: number }[],
+  o: { noise?: number; gapWidth?: number; ext?: number; seed?: number } = {},
+): { profile: Float32Array; ext: number; coreLength: number; count: number; starts: number[] } {
+  const rand = rng(o.seed ?? 1);
+  const b = [0];
+  const depth = [sections[0].depth];
+  const starts: number[] = [];
+  for (const sec of sections) {
+    starts.push(b[b.length - 1]);
+    for (let i = 0; i < sec.count; i++) {
+      b.push(b[b.length - 1] + sec.period);
+      depth.push(sec.depth * (0.8 + 0.4 * rand()));
+    }
+  }
+  const N = b.length - 1;
+  const bb = Float64Array.from(b);
+  const ext = o.ext ?? 70;
+  const c0 = (b[0] + b[1]) / 2;
+  const coreLength = (b[N - 1] + b[N]) / 2 - c0;
+  const w = o.gapWidth ?? 6;
+  const out = new Float32Array(Math.floor(coreLength + 2 * ext) + 1);
+  for (let i = 0; i < out.length; i++) {
+    const s = c0 + (i - ext);
+    let v = 40;
+    if (s >= 0 && s <= b[N]) {
+      const { delta, boundary } = locate(bb, s);
+      v = 170 - depth[boundary] * Math.exp(-((delta / w) ** 2));
+    }
+    out[i] = v + (o.noise ?? 0) * gauss(rand);
+  }
+  // Section starts as profile indices.
+  return { profile: out, ext, coreLength, count: N, starts: starts.map((s) => s - c0 + ext) };
+}
+
 export interface StackImageOptions {
   count: number;
   pxPerItem: number;

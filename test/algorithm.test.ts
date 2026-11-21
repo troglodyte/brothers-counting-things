@@ -3,7 +3,7 @@ import { chooseCount, countStack, countTolerance } from '../src/algorithm/count'
 import { countPeaks } from '../src/algorithm/peaks';
 import { estimateGlobalPeriod, windowedPeriod } from '../src/algorithm/period';
 import { detrend, parabolicOffset } from '../src/algorithm/signal';
-import { rng, synthProfile, synthStack } from './synth';
+import { rng, synthProfile, synthSections, synthStack } from './synth';
 
 const within = (got: number, want: number, rel: number) => Math.abs(got - want) <= Math.max(1, rel * want);
 
@@ -246,6 +246,27 @@ describe('staggered stacks: groups of ~10 items spine-out, then ~10 pages-out', 
     const r = countStack(img, img.line);
     expect(Math.abs(r.periodCount! - 80)).toBeLessThanOrEqual(countTolerance(80));
     expect(Math.abs(r.count! - 80)).toBeLessThanOrEqual(countTolerance(80));
+  });
+
+  it('a stretch with fainter gaps keeps its own spacing instead of borrowing its neighbours', () => {
+    // Real photo 6816 (60 items): the windows across the middle spine and
+    // page groups measured 35.6 and 36.4 px, right by eye, but at strength
+    // 0.28-0.29. Under the old 0.35 cut they borrowed 32 px from their
+    // neighbours and the stack came out 65.
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const { profile, ext, coreLength, count, starts } = synthSections(
+        [
+          { count: 20, period: 33, depth: 60 },
+          { count: 20, period: 37, depth: 16 },
+          { count: 20, period: 31, depth: 60 },
+        ],
+        { noise: 8, seed },
+      );
+      const r = windowedPeriod(profile, ext, coreLength)!;
+      const mid = starts[1] + 10 * 37;
+      expect([seed, r.periodAt(mid) > 34.5]).toEqual([seed, true]);
+      expect([seed, Math.abs(Math.round(r.count) - count) <= countTolerance(count)]).toEqual([seed, true]);
+    }
   });
 });
 
