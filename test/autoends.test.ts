@@ -56,19 +56,18 @@ describe('findEnds', () => {
         const geom = stripGeometry(guide, 32);
         const ends = findEnds(extractColourStrip(img, guide, geom), geom);
         expect(ends).not.toBeNull();
-        // The found end items, in items from the true ones, positive inwards. The trim
-        // keeps them off the background: without it both land about 0.7 items outside,
-        // which the count tolerance alone lets through (one item too many).
+        // The found end items, in items from the true ones, positive inwards: each within
+        // half an item, or the count gains or loses one. The trim takes the energy the
+        // stack/background step adds (half the one-period energy window) back off: with no
+        // trim both ends land about 0.7 items outside, with a whole period about 0.4 inside,
+        // and both still pass the count tolerance (one item too many, or too few).
         const L = Math.hypot(synth.line.x2 - synth.line.x1, synth.line.y2 - synth.line.y1);
         const item = L / (c.count - 1);
         const inStart = (ends!.start - f * L) / item;
         const inEnd = ((1 + f) * L - ends!.end) / item;
-        for (const off of [inStart, inEnd]) {
-          expect(off).toBeGreaterThan(-0.25);
-          expect(off).toBeLessThan(0.75);
-        }
+        for (const off of [inStart, inEnd]) expect(Math.abs(off)).toBeLessThan(0.5);
         const r = countStack(img, subLine(guide, ends!));
-        expect(Math.abs(r.count! - c.count)).toBeLessThanOrEqual(countTolerance(c.count));
+        expect(r.count).toBe(c.count);
       });
     }
   }

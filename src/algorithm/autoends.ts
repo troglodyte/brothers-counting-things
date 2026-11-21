@@ -7,8 +7,9 @@
 // between the found end items, so the period is measured on the stack alone;
 // over the whole guide line the background skews it.
 //
-// harness/autoends.ts measures this on the real photos: 17/18 within
-// tolerance with the guide 15-50% longer than the stack, no wrong "good".
+// harness/autoends.ts measures this on the real photos, with the guide 15-50%
+// longer than the stack: 20/30 within tolerance, 2 wrong "good" (2026-11-21).
+// The misses are mostly guides that run on into a neighbouring stack.
 
 import { lookSimilarity, stackLook } from './appearance';
 import { windowedPeriod } from './period';
@@ -24,7 +25,12 @@ export interface AutoEndsOptions {
   bridge?: number;
   /** Energy past a bridged dip must last this many periods to count as stack (a lone background step gives about one). */
   minRun?: number;
-  /** Periods trimmed off each energy edge (the stack/background step adds energy of its own). */
+  /**
+   * Periods trimmed off each energy edge. The stack/background step adds energy of its
+   * own, which the one-period energy window spreads half a period outwards, so 0.5. The
+   * old 1 put both end items about 0.4 items inside the stack and lost one item from every
+   * synthetic count (still within tolerance, so unnoticed until 2026-11-21).
+   */
   trim?: number;
   /** Colour similarity an item-sized slice needs to the middle third to count as stack. 0 turns the look check off. */
   look?: number;
@@ -32,7 +38,7 @@ export interface AutoEndsOptions {
   lookRun?: number;
 }
 
-export const AUTO_DEFAULTS: Required<AutoEndsOptions> = { win: 1, half: 0.5, bridge: 3, minRun: 1.5, trim: 1, look: 0.2, lookRun: 2 };
+export const AUTO_DEFAULTS: Required<AutoEndsOptions> = { win: 1, half: 0.5, bridge: 3, minRun: 1.5, trim: 0.5, look: 0.2, lookRun: 2 };
 
 export interface FoundEnds {
   /** Centres of the first and last item, in px along the guide line from its start. */
